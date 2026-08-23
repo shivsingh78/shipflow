@@ -11,9 +11,9 @@ const s3 = new S3Client({
         secretAccessKey:process.env.AWS_SECRET_KEY
     } 
 
-})
+}) 
 
-export const uploadFile = async ( fileName, localFilePath)=>{
+export const uploadFile = async ( fileName, localFilePath)=>{ 
     const fileContent = fs.readFileSync(localFilePath)
 
     const command = new PutObjectCommand({
@@ -22,7 +22,7 @@ export const uploadFile = async ( fileName, localFilePath)=>{
         Body:fileContent
     })
     await s3.send(command)
-
+ 
     console.log(`${fileName} uploaded successfully`);
     
 }

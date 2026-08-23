@@ -20,9 +20,9 @@ app.post("/deploy",async (req,res)=>{
       const repoUrl=req.body.repoUrl;
       
     const id=genrate()
-    const outerPath=path.join(process.cwd(),"output",id)
+    const outerPath=path.join(process.cwd(),"output",id);
     
-    await git.clone(repoUrl,outerPath)
+    await git.clone(repoUrl,outerPath);
     console.log("start");
     
     const files= await getAllFiles(outerPath)
@@ -51,7 +51,7 @@ app.post("/deploy",async (req,res)=>{
       } 
     )
      
-    console.log(deployQueue.getJobCounts());
+    console.log(await deployQueue.getJobCounts());
     console.log(await deployQueue.getJobs());
     
     

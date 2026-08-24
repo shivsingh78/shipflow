@@ -1,6 +1,13 @@
 import { Worker } from "bullmq";
 import IORedis from "ioredis";
-import { getRelease, updateRelease } from "./src/releaseStore.js";
+
+import {
+  getRelease,
+  updateRelease
+} from "./src/releaseStore.js";
+
+import { prepareRelease } from "./src/prepare.js";
+import { buildRelease } from "./src/build.js";
 
 const connection = new IORedis({
   host: process.env.REDIS_HOST || "127.0.0.1",
@@ -20,18 +27,75 @@ const worker = new Worker(
       throw new Error(`Release ${releaseId} not found`);
     }
     console.log("Release found", release);
-    
-    await updateRelease(releaseId, {
-      status:"RUNNING",
-      currentStage: "RELEASE"
-    });
-    console.log("Release status",await getRelease(releaseId));
 
-    return {
-      success: true,
-      releaseId,
-      repoUrl
-    }  
+  let currentStage="RELEASE";
+
+    try {
+      currentStage="PREPARE";
+       // -----------------------------
+      // PREPARE START
+      // -----------------------------
+
+      await updateRelease(releaseId,{
+        status: "RUNNNING",
+        currentStage: 'PREPARE',
+        errorMessage: null,
+      })
+  
+      const prepared = await prepareRelease({releaseId,repoUrl})
+
+      console.log("Prepare result", prepared);
+      
+      currentStage="BUILD"
+      // -----------------------
+      // BUILD
+      // -----------------------
+
+      await updateRelease(
+        releaseId,{
+          status: "RUNNING",
+          currentStage: "BUILD",
+          errorMessage: null,
+        }
+      )
+      const built = await buildRelease({
+        releaseId,
+        workspacePath:prepared.workspacePath,
+      })
+
+      console.log("Build result:", built);
+       // -----------------------
+      // TEMPORARY SUCCESS
+      // -----------------------
+
+      await updateRelease(
+        releaseId,
+        {
+          status: "SUCCESS",
+          currentStage: "BUILD",
+          errorMessage:null,
+        }
+      )
+      return {
+        success : true,
+        releaseId,
+      }
+
+    } catch (error) {
+      console.error(`${currentStage} failed for ${releaseId}`);
+      
+      console.error(error);
+      await updateRelease(
+        releaseId,
+        {
+          status:"FAILED",
+          currentStage,
+          errorMessage: error.message,
+        }
+      )
+      throw error;
+
+    }
   },
   {
     connection

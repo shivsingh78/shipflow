@@ -6,7 +6,8 @@
   "packageManager": "pnpm@11.5.0",
   "scripts": {
     "dev": "nodemon --ignore output/ index.js",
-    "worker": "nodemon worker.js"
+    "worker": "nodemon worker.js",
+    "build": "node build.js"
   },
   "keywords": [],
   "author": "",

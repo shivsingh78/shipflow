@@ -40,6 +40,7 @@ export async function updateRelease(releaseId,updates){
     SET 
     status = COALESCE($2, status),
     current_stage = COALESCE($3, current_stage),
+    error_message = COALESCE    ($4, error_message),
     updated_at = CURRENT_TIMESTAMP
 WHERE RELEASE_id = $1
 RETURNING *
@@ -48,6 +49,7 @@ RETURNING *
         releaseId,
         updates.status ?? null,
         updates.currentStage ?? null,
+        updates.errorMessage ?? null,
     ]
     )
   

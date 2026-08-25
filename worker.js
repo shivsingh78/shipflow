@@ -8,6 +8,7 @@ import { prepareRelease } from "./src/prepare.js";
 import { buildRelease } from "./src/build.js";
 import { deployRelease } from "./src/deploy.js";
 import { verifyRelease } from "./src/verify.js";
+import { notifyRelease } from "./src/notify.js";
 
 const connection = new IORedis({
   host: process.env.REDIS_HOST || "127.0.0.1",
@@ -95,46 +96,68 @@ const worker = new Worker(
 
       currentStage = "DEPLOY";
 
-      await updateRelease(releaseId, {
-        status: "RUNNING",
-        currentStage,
-        errorMessage: null,
-      });
+await updateRelease(releaseId, {
+  status: "RUNNING",
+  currentStage,
+  errorMessage: null,
+});
 
-      const deployed = await deployRelease({
+const deployed = await deployRelease({
+  releaseId,
+  workspacePath:
+    tested.workspacePath,
+});
+
+console.log(
+  "Deploy result:",
+  deployed
+);
+
+await updateRelease(releaseId, {
+  status: "RUNNING",
+  currentStage: "DEPLOY",
+  deploymentUrl:
+    deployed.deploymentUrl,
+  artifactPath:
+    deployed.deploymentPath,
+  errorMessage: null,
+});
+
+currentStage = "VERIFY";
+
+await updateRelease(releaseId, {
+  status: "RUNNING",
+  currentStage,
+  errorMessage: null,
+});
+
+const verified =
+  await verifyRelease({
+    releaseId,
+    deploymentUrl:
+      deployed.deploymentUrl,
+  });
+
+console.log(
+  "Verify result:",
+  verified
+);
+ //add notification
+      await notifyRelease({
         releaseId,
-        workspacePath: tested.workspacePath,
+        type: "RELEASE_SUCCESS",
+        message: `Release ${releaseId} successfully deployed and verified.`,
       });
 
-      console.log("Deploy result:", deployed);
+await updateRelease(releaseId, {
+  status: "SUCCESS",
+  currentStage: "VERIFY",
+  errorMessage: null,
+});
 
-      await updateRelease(releaseId, {
-        status: "SUCCESS",
-        currentStage: "DEPLOY",
-        deploymentUrl: deployed.deploymentUrl,
-        errorMessage: null,
-      });
+     
 
-      currentStage = "VERIFY";
-
-      await updateRelease(releaseId, {
-        status: "RUNNING",
-        currentStage,
-        errorMessage: null,
-      });
-
-      const verified = await verifyRelease({
-        releaseId,
-        deploymentUrl: deployed.deploymentUrl,
-      });
-
-      console.log("Verify result:", verified);
-
-      await updateRelease(releaseId, {
-        status: "SUCCESS",
-        currentStage: "VERIFY",
-        errorMessage: null,
-      });
+      
 
       return {
         success: true,
@@ -148,6 +171,11 @@ const worker = new Worker(
         status: "FAILED",
         currentStage,
         errorMessage: error.message,
+      });
+      await notifyRelease({
+        releaseId,
+        type: "RELEASE_FAILED",
+        message: `Release ${releaseId} failed during ${currentStage}: ${error.message}`,
       });
       throw error;
     }

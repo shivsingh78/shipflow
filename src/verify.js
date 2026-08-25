@@ -7,17 +7,21 @@ function request(url, timeout = 5000) {
       ? https
       : http;
 
-    const req = client.get(url, (res) => {
-      const statusCode = res.statusCode ?? 0;
+    const req = client.get(
+      url,
+      (res) => {
+        const statusCode =
+          res.statusCode ?? 0;
 
-      // We don't need the entire response body.
-      res.resume();
+        res.resume();
 
-      resolve(statusCode);
-    });
+        resolve(statusCode);
+      }
+    );
 
     req.setTimeout(timeout, () => {
       req.destroy();
+
       reject(
         new Error(
           `Health check timed out after ${timeout}ms`
@@ -25,9 +29,7 @@ function request(url, timeout = 5000) {
       );
     });
 
-    req.on("error", (error) => {
-      reject(error);
-    });
+    req.on("error", reject);
   });
 }
 
@@ -35,8 +37,13 @@ export async function verifyRelease({
   releaseId,
   deploymentUrl,
 }) {
-  console.log(`Verifying release ${releaseId}`);
-  console.log(`Deployment URL: ${deploymentUrl}`);
+  console.log(
+    `Verifying release ${releaseId}`
+  );
+
+  console.log(
+    `Deployment URL: ${deploymentUrl}`
+  );
 
   if (!deploymentUrl) {
     throw new Error(
@@ -44,15 +51,17 @@ export async function verifyRelease({
     );
   }
 
-  const statusCode = await request(
-    deploymentUrl
-  );
+  const statusCode =
+    await request(deploymentUrl);
 
   console.log(
     `Health check status: ${statusCode}`
   );
 
-  if (statusCode < 200 || statusCode >= 400) {
+  if (
+    statusCode < 200 ||
+    statusCode >= 400
+  ) {
     throw new Error(
       `Deployment health check failed with status ${statusCode}`
     );

@@ -2,23 +2,155 @@ import express from 'express';
 import cors from 'cors';
 import fs from "fs/promises"
 import { genrate } from './src/genrate.js';
-import simpleGit from 'simple-git';
 import path from 'path'
 import dotenv from "dotenv"
+import { deployQueue } from "./src/queue.js";
 dotenv.config()
-import { getAllFiles } from './src/file.js';
-import { uploadFile } from './src/aws.js';
-import { deployQueue } from './src/queue.js';
 import {
   createRelease
 } from "./src/releaseStore.js";
 import { pool } from './src/db.js';
-
-
+import { rollbackRelease } from "./src/rollback.js";
+import { getS3Object } from "./src/aws.js";
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+
+async function serveActiveFile(
+  requestedPath,
+  req,
+  res
+) {
+  try {
+    const cleanPath =
+      requestedPath
+        .replace(/^\/+/, "")
+        .replace(/\.\./g, "");
+
+    const key =
+      `active/${cleanPath || "index.html"}`;
+
+    const result =
+      await getS3Object(key);
+
+    if (!result.Body) {
+      return res
+        .status(404)
+        .send("Deployment file not found");
+    }
+
+    if (result.ContentType) {
+      res.setHeader(
+        "Content-Type",
+        result.ContentType
+      );
+    }
+
+    const body =
+      await result.Body.transformToByteArray();
+
+    return res.send(
+      Buffer.from(body)
+    );
+  } catch (error) {
+    console.error(
+      "Active deployment error:",
+      error
+    );
+
+    return res
+      .status(404)
+      .send("Deployment file not found");
+  }
+}
+
+
+app.get(
+  "/active",
+  async (req, res) => {
+    await serveActiveFile(
+      "index.html",
+      req,
+      res
+    );
+  }
+);
+
+app.get(
+  "/active/*splat",
+  async (req, res) => {
+    const splat = req.params.splat;
+
+    const requestedPath =
+      Array.isArray(splat)
+        ? splat.join("/")
+        : splat || "index.html";
+
+    await serveActiveFile(
+      requestedPath,
+      req,
+      res
+    );
+  }
+);
+
+app.post(
+  "/rollback/:releaseId",
+  async (req, res) => {
+    try {
+      const { releaseId } =
+        req.params;
+
+      const rollback =
+        await rollbackRelease(
+          releaseId
+        );
+
+      return res.status(200).json({
+        success: true,
+        message:
+          "Rollback completed",
+        rollback,
+      });
+    } catch (error) {
+      console.error(error);
+
+      return res.status(500).json({
+        success: false,
+        message:
+          error.message,
+      });
+    }
+  }
+);
+
+//testing route
+// app.post("/rollback/:releaseId", async (req, res) => {
+//   try {
+//     const { releaseId } = req.params;
+
+//     const rollback = await rollbackRelease(
+//       releaseId
+//     );
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Rollback target selected",
+//       rollback,
+//     });
+//   } catch (error) {
+//     console.error(error);
+
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// });
+
+
 
 app.get(
   "/deployments/:releaseId",

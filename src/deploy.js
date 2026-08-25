@@ -1,8 +1,12 @@
 import fs from "fs/promises";
 import path from "path";
 
-import { uploadFile } from "./aws.js";
-
+import {
+  uploadFile,
+  listS3Objects,
+  copyS3Object,
+  deleteS3Prefix,
+} from "./aws.js";
 
 
 async function directoryExists(directoryPath) {
@@ -24,19 +28,20 @@ async function getBuildDirectory(workspacePath) {
     await fs.readFile(packageJsonPath, "utf-8")
   );
 
-  // Vite / many frontend projects
+  const distPath = path.join(
+    workspacePath,
+    "dist"
+  );
+
   if (
     packageJson.scripts?.build?.includes("vite") &&
-    await directoryExists(path.join(workspacePath, "dist"))
+    await directoryExists(distPath)
   ) {
-    return path.join(workspacePath, "dist");
+    return distPath;
   }
 
-  // Common fallback
-  if (
-    await directoryExists(path.join(workspacePath, "dist"))
-  ) {
-    return path.join(workspacePath, "dist");
+  if (await directoryExists(distPath)) {
+    return distPath;
   }
 
   throw new Error(
@@ -47,9 +52,12 @@ async function getBuildDirectory(workspacePath) {
 async function getAllFiles(folderPath) {
   const files = [];
 
-  const entries = await fs.readdir(folderPath, {
-    withFileTypes: true,
-  });
+  const entries = await fs.readdir(
+    folderPath,
+    {
+      withFileTypes: true,
+    }
+  );
 
   for (const entry of entries) {
     const fullPath = path.join(
@@ -69,18 +77,66 @@ async function getAllFiles(folderPath) {
   return files;
 }
 
+async function activateRelease(releaseId) {
+  const sourcePrefix =
+    `releases/${releaseId}/build/`;
+
+  console.log(
+    `Activating release ${releaseId}`
+  );
+
+  // Remove currently active deployment
+  await deleteS3Prefix("active/");
+
+  const objects =
+    await listS3Objects(sourcePrefix);
+
+  if (objects.length === 0) {
+    throw new Error(
+      `No build artifacts found at ${sourcePrefix}`
+    );
+  }
+
+  for (const object of objects) {
+    if (!object.Key) {
+      continue;
+    }
+
+    const relativePath =
+      object.Key.substring(
+        sourcePrefix.length
+      );
+
+    const destinationKey =
+      `active/${relativePath}`;
+
+    await copyS3Object(
+      object.Key,
+      destinationKey
+    );
+  }
+
+  console.log(
+    `Release ${releaseId} is now active`
+  );
+}
+
 export async function deployRelease({
   releaseId,
   workspacePath,
 }) {
-    const deploymentUrl =
-  `http://api:8000/deployments/`;
+  console.log(
+    `Deploying release ${releaseId}`
+  );
 
-  console.log(`Deploying release ${releaseId}`);
-  console.log(`Workspace: ${workspacePath}`);
+  console.log(
+    `Workspace: ${workspacePath}`
+  );
 
   const buildDirectory =
-    await getBuildDirectory(workspacePath);
+    await getBuildDirectory(
+      workspacePath
+    );
 
   console.log(
     `Build directory: ${buildDirectory}`
@@ -94,30 +150,39 @@ export async function deployRelease({
     `Found ${files.length} build files`
   );
 
-  for (const file of files) {
-    const relativePath = path.relative(
-      buildDirectory,
-      file
-    );
+  // Store immutable release artifact
+for (const file of files) {
+  const relativePath = path.relative(
+    buildDirectory,
+    file
+  );
 
-    const key = `releases/${releaseId}/build/${relativePath}`;
+  const key =
+    `releases/${releaseId}/build/${relativePath}`;
 
-    await uploadFile(
-      key,
-      file
-    );
-  }
+  await uploadFile(
+    key,
+    file
+  );
+}
 
   console.log(
-    `Deployment artifacts uploaded for ${releaseId}`
+    `Release artifact stored for ${releaseId}`
   );
+
+  // Make this release active
+  await activateRelease(releaseId);
+
+  const deploymentUrl =
+    process.env.INTERNAL_DEPLOYMENT_URL ||
+    "http://api:8000/active/";
 
   return {
     releaseId,
     buildDirectory,
     fileCount: files.length,
-    deploymentPath: `releases/${releaseId}/build`,
-    //for testing use local url
+    deploymentPath:
+      `releases/${releaseId}/build`,
     deploymentUrl,
   };
 }

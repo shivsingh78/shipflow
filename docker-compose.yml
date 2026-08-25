@@ -2,63 +2,154 @@ services:
 
   postgres:
     image: postgres:17
-    container_name: vircle-postgres
+    container_name: shipflow-postgres
     restart: unless-stopped
+
     environment:
-      POSTGRES_USER: vircle
-      POSTGRES_PASSWORD: vircle123
-      POSTGRES_DB: vircle
+      POSTGRES_USER: shipflow
+      POSTGRES_PASSWORD: shipflow123
+      POSTGRES_DB: shipflow
+
     ports:
       - "5432:5432"
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U shipflow -d shipflow"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+
   redis:
     image: redis:7
-    container_name: vircle-redis
+    container_name: shipflow-redis
     restart: unless-stopped
+
     ports:
       - "6379:6379"
 
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+
   api:
-    build: .
-    container_name: vircle-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: shipflow-api
     restart: unless-stopped
-    command: node index.js
+
+    # Start nodemon directly so pnpm does not
+    # try to recreate node_modules at runtime.
+    command:
+      [
+        "node_modules/.bin/nodemon",
+        "-L",
+        "--ignore",
+        "output/",
+        "index.js"
+      ]
+
     ports:
       - "8000:8000"
+
     env_file:
       - .env
+
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: vircle
-      DB_PASSWORD: vircle123
-      DB_NAME: vircle
+      DB_USER: shipflow
+      DB_PASSWORD: shipflow123
+      DB_NAME: shipflow
+
       REDIS_HOST: redis
       REDIS_PORT: 6379
+
+    volumes:
+      # Live source-code updates
+      - .:/app
+
+      # Keep Linux container dependencies separate
+      # from host node_modules.
+      - api_node_modules:/app/node_modules
+
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
 
   worker:
-    build: .
-    container_name: vircle-worker
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: shipflow-worker
     restart: unless-stopped
-    command: node worker.js
+
+    # Start nodemon directly for live worker reloads.
+    command:
+        [
+         "node_modules/.bin/nodemon",
+         "-L",
+         "--ignore",
+          "output/",
+          "worker.js"
+       ]
+
     env_file:
       - .env
+
     environment:
+      CI: "true"
+
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: vircle
-      DB_PASSWORD: vircle123
-      DB_NAME: vircle
+      DB_USER: shipflow
+      DB_PASSWORD: shipflow123
+      DB_NAME: shipflow
+
       REDIS_HOST: redis
       REDIS_PORT: 6379
+
+    volumes:
+      # Share source code and output workspace.
+      - .:/app
+
+      # Separate container dependencies.
+      - worker_node_modules:/app/node_modules
+
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
 
 volumes:
+
   postgres_data:
+
+  api_node_modules:
+
+  worker_node_modules:

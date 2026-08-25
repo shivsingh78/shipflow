@@ -8,15 +8,15 @@ Their are three main services which we use:
 
 Release ✅
    ↓
-Prepare ← next
+Prepare ✅
    ↓
-Build
+Build ✅
    ↓
-Test
+Test ✅
    ↓
-Deploy
+Deploy ✅
    ↓
-Verify
+Verify 
    ↓
 Notify
    ↓

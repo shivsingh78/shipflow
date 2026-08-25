@@ -1,16 +1,22 @@
 {
-  "name": "vircle-clone",
+  "name": "shipflow",
   "version": "1.0.0",
-  "description": "",
+  "description": "Release and deployment automation platform",
   "main": "index.js",
   "packageManager": "pnpm@11.5.0",
   "scripts": {
-    "dev": "nodemon --ignore output/ index.js",
-    "worker": "nodemon worker.js",
+    "dev": "nodemon -L --ignore output/ index.js",
+    "worker": "nodemon -L worker.js",
     "build": "node build.js"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "cicd",
+    "deployment",
+    "release",
+    "cli",
+    "devops"
+  ],
+  "author": "Shiv Singh Baghel",
   "license": "ISC",
   "type": "module",
   "dependencies": {

@@ -44,7 +44,7 @@ async function detectPackageManager(projectPath, packageJson) {
     }
   }
 
-  // 2. Detect lockfile
+  // 2. Lockfile detection
   if (
     await fileExists(
       path.join(projectPath, "pnpm-lock.yaml")
@@ -74,22 +74,21 @@ async function detectPackageManager(projectPath, packageJson) {
   );
 }
 
-export async function buildRelease({
+export async function testRelease({
   releaseId,
   workspacePath,
 }) {
-  console.log(`Building release ${releaseId}`);
-  console.log(`Workspace ${workspacePath}`);
+  console.log(`Testing release ${releaseId}`);
+  console.log(`Workspace: ${workspacePath}`);
 
   const packageJson =
     await readPackageJson(workspacePath);
 
-  const buildScript =
-    packageJson.scripts?.build;
+  const testScript = packageJson.scripts?.test;
 
-  if (!buildScript) {
+  if (!testScript) {
     throw new Error(
-      "No build script found in package.json"
+      "No test script found in package.json"
     );
   }
 
@@ -104,77 +103,49 @@ export async function buildRelease({
   );
 
   console.log(
-    `Build script: ${buildScript}`
+    `Test script: ${testScript}`
   );
 
+  const env = {
+    ...process.env,
+    CI: "true",
+  };
+
   if (packageManager === "pnpm") {
-    console.log("Installing dependencies...");
-
     await execFileAsync(
       "pnpm",
-      ["install", "--frozen-lockfile"],
+      ["test"],
       {
         cwd: workspacePath,
-      }
-    );
-
-    console.log("Running build...");
-
-    await execFileAsync(
-      "pnpm",
-      ["run", "build"],
-      {
-        cwd: workspacePath,
+        env,
       }
     );
   }
 
   if (packageManager === "npm") {
-    console.log("Installing dependencies...");
-
     await execFileAsync(
       "npm",
-      ["ci"],
+      ["test"],
       {
         cwd: workspacePath,
-      }
-    );
-
-    console.log("Running build...");
-
-    await execFileAsync(
-      "npm",
-      ["run", "build"],
-      {
-        cwd: workspacePath,
+        env,
       }
     );
   }
 
   if (packageManager === "yarn") {
-    console.log("Installing dependencies...");
-
     await execFileAsync(
       "yarn",
-      ["install", "--frozen-lockfile"],
+      ["test"],
       {
         cwd: workspacePath,
-      }
-    );
-
-    console.log("Running build...");
-
-    await execFileAsync(
-      "yarn",
-      ["build"],
-      {
-        cwd: workspacePath,
+        env,
       }
     );
   }
 
   console.log(
-    `Build completed for ${releaseId}`
+    `Tests completed for ${releaseId}`
   );
 
   return {

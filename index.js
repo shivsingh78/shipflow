@@ -19,7 +19,31 @@ import { pool } from './src/db.js';
 const app = express();
 app.use(express.json());
 app.use(cors());
-const git=simpleGit()
+
+app.get(
+  "/deployments/:releaseId",
+  async (req, res) => {
+    const { releaseId } = req.params;
+
+    const indexPath = path.join(
+      process.cwd(),
+      "output",
+      releaseId,
+      "dist",
+      "index.html"
+    );
+
+    try {
+      await fs.access(indexPath);
+      res.sendFile(indexPath);
+    } catch {
+      res.status(404).json({
+        success: false,
+        message: "Deployment not found",
+      });
+    }
+  }
+);
 
 //Postgrees connect
 

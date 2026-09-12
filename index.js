@@ -12,11 +12,55 @@ import { getS3Object } from "./src/aws.js";
 import {
   createRelease,
   getRelease,
+  getAllReleases
 } from "./src/releaseStore.js";
+import { getReleaseLogs } from "./src/logStore.js";
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+app.get('/releases',async (req,res)=>{
+  try{
+    const releases = await getAllReleases();
+    return res.status(200).json({
+      success:true,
+      releases
+    })
+
+  }catch(error){
+    console.log(error);
+    return res.status(500).json({
+      success:false,
+      message:"Failed to fetch releases",
+    })
+    
+  }
+})
+
+
+app.get('/releases/:releaseId/logs',async (req,res)=>{
+  try {
+    const {releaseId}=req.params;
+
+    const logs=await getReleaseLogs(releaseId);
+
+    return res.status(200).json({
+      success:true,
+      logs,
+    })
+    
+  } catch (error) {
+
+    console.error(error);
+
+    return res.status(500).json({
+      success:false,
+      message:"Failed to fetch release logs",
+    })
+    
+  }
+})
 
 //testing
 app.get("/releases/:releaseId", async (req, res) => {

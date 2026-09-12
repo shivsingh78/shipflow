@@ -4,6 +4,7 @@ import { testRelease } from "./test.js";
 import { deployRelease } from "./deploy.js";
 import { verifyRelease } from "./verify.js";
 import { notifyRelease } from "./notify.js";
+import { logRelease } from "./logStore.js";
 
 import {
   getRelease,
@@ -32,6 +33,12 @@ export async function runPipeline({
     // -----------------------
 
     currentStage = "PREPARE";
+    await logRelease({
+  releaseId,
+  stage: "PREPARE",
+  level: "INFO",
+  message: "Prepare stage started",
+});
 
     await updateRelease(releaseId, {
       status: "RUNNING",
@@ -45,11 +52,25 @@ export async function runPipeline({
         repoUrl,
       });
 
+      await logRelease({
+  releaseId,
+  stage: "PREPARE",
+  level: "INFO",
+  message: "Repository prepared successfully",
+});
+
     // -----------------------
     // BUILD
     // -----------------------
 
     currentStage = "BUILD";
+
+    await logRelease({
+  releaseId,
+  stage: "BUILD",
+  level: "INFO",
+  message: "Build stage started",
+});
 
     await updateRelease(releaseId, {
       status: "RUNNING",
@@ -64,11 +85,25 @@ export async function runPipeline({
           prepared.workspacePath,
       });
 
+      await logRelease({
+  releaseId,
+  stage: "BUILD",
+  level: "INFO",
+  message: "Build completed successfully",
+});
+
     // -----------------------
     // TEST
     // -----------------------
 
     currentStage = "TEST";
+
+    await logRelease({
+  releaseId,
+  stage: "TEST",
+  level: "INFO",
+  message: "Test stage started",
+});
 
     await updateRelease(releaseId, {
       status: "RUNNING",
@@ -83,11 +118,25 @@ export async function runPipeline({
           built.workspacePath,
       });
 
+      await logRelease({
+  releaseId,
+  stage: "TEST",
+  level: "INFO",
+  message: "Test completed successfully",
+});
+
     // -----------------------
     // DEPLOY
     // -----------------------
 
     currentStage = "DEPLOY";
+
+    await logRelease({
+  releaseId,
+  stage: "DEPLOY",
+  level: "INFO",
+  message: "DEPLOY stage started",
+});
 
     await updateRelease(releaseId, {
       status: "RUNNING",
@@ -111,11 +160,25 @@ export async function runPipeline({
   artifactPath: deployed.deploymentPath,
   errorMessage: null,
 });
+
+ await logRelease({
+  releaseId,
+  stage: "DEPLOY",
+  level: "INFO",
+  message: "DEPLOY completed successfully",
+});
     // -----------------------
     // VERIFY
     // -----------------------
 
     currentStage = "VERIFY";
+
+    await logRelease({
+  releaseId,
+  stage: "VERIFY",
+  level: "INFO",
+  message: "VERIFY stage started",
+});
 
     await updateRelease(releaseId, {
       status: "RUNNING",
@@ -129,6 +192,13 @@ export async function runPipeline({
         deploymentUrl:
           deployed.deploymentUrl,
       });
+
+    await logRelease({
+    releaseId,
+    stage: "VERIFY",
+    level: "INFO",
+    message: "VERIFY completed successfully",
+   });
 
     // -----------------------
     // SUCCESS
@@ -157,6 +227,13 @@ export async function runPipeline({
 
   } catch (error) {
 
+    await logRelease({
+  releaseId,
+  stage: currentStage,
+  level: "ERROR",
+  message: error.message,
+});
+
     console.error(
       `${currentStage} failed for ${releaseId}`,
       error
@@ -184,4 +261,6 @@ export async function runPipeline({
 
     throw error;
   }
+
+  
 }

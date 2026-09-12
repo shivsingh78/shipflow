@@ -91,3 +91,14 @@ export async function getPreviousSuccessfulRelease(
 
   return result.rows[0];
 }
+
+export async function getAllReleases() {
+  const result = await pool.query(`
+    SELECT * 
+    FROM releases
+    ORDER BY id DESC
+    `)
+
+    return result.rows;
+  
+}

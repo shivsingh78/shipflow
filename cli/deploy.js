@@ -50,3 +50,34 @@ export async function getReleaseStatus(
 
   return await response.json();
 }
+
+
+
+export async function getAllReleases(){
+  const response = await fetch (
+    `${API_URL}/releases`
+  );
+  
+  if(!response.ok){
+    const body = await response.text();
+    throw new Error(
+    `Failed to fetch releases: ${response.status} ${body}`
+  )
+  }
+  
+
+  return await response.json()
+
+}
+
+export async function getReleaseLogs(releaseId) {
+
+  const response = await fetch(`${API_URL}/releases/${releaseId}/logs`);
+  if(!response.ok){
+    const body=await body.text();
+
+    throw new Error(`Failed to fetch logs: ${response.status} ${body}`);
+  }
+  return await response.json();
+  
+}

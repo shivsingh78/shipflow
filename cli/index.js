@@ -3,6 +3,8 @@
 import {
   createRelease,
   getReleaseStatus,
+  getAllReleases,
+  getReleaseLogs
 } from "./deploy.js";
 
 const command = process.argv[2];
@@ -212,6 +214,96 @@ if (command === "status") {
 
 /*
 |--------------------------------------------------------------------------
+| RELEASES
+|--------------------------------------------------------------------------
+*/
+
+if(command === "releases") {
+  try {
+    const result = await getAllReleases();
+    const releases = result.releases;
+    console.log("");
+    console.log("ShipFlow Releases");
+    console.log("");
+
+    if(releases.length ===0){
+      console.log(
+        "No releases found."
+      );
+
+      process.exit(0);
+      
+    }
+
+    console.log(     "RELEASE\tSTATUS\tSTAGE\tCREATED");
+
+    for(const release of releases){
+      console.log( `${release.release_id}\t${release.status}\t${release.current_stage}\t${release.created_at}`);
+      
+    }
+     
+
+  }catch(error){
+console.error("");
+    console.error(
+      "❌",
+      error.message
+    );
+
+    process.exit(1);
+  }
+
+  process.exit(0);
+  }
+
+  /*
+|--------------------------------------------------------------------------
+| LOGS
+|--------------------------------------------------------------------------
+*/
+
+if(command === "logs"){
+  try {
+    const releaseId = process.argv[3];
+
+    if(!releaseId) {
+      console.error(
+        "Usage: shipflow logs <releaseId>"
+      );
+      process.exit(1);
+    }
+
+    const result = await getReleaseLogs(releaseId);
+
+    console.log("");
+    if(result.logs.length === 0){
+      console.log("No logs found.");
+      process.exit(0);
+
+    }
+
+    for(const log of result.logs){
+      console.log(`[${log.stage}] [${log.level}] ${log.message}`)
+    }
+    
+    
+  } catch (error) {
+    console.error("");
+    console.error(
+      "❌",
+      error.message
+    );
+
+    process.exit(1);
+  }
+
+    process.exit(0);
+  }
+
+
+/*
+
+|--------------------------------------------------------------------------
 | HELP
 |--------------------------------------------------------------------------
 */
@@ -223,4 +315,10 @@ console.log(
 );
 console.log(
   "  shipflow status <releaseId>"
+);
+console.log(
+  "  shipflow releases"
+);
+console.log(
+  "  shipflow logs <releaseId>"
 );

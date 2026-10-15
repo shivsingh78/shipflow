@@ -1,7 +1,11 @@
 import path from "path";
 import dotenv from "dotenv";
 
-dotenv.config({ quiet: true });
+// Unit tests set SHIPFLOW_NO_DOTENV=1 (test/unit/setup.js) so a developer's
+// .env (real database, cloud credentials) is never loaded into tests.
+if (process.env.SHIPFLOW_NO_DOTENV !== "1") {
+  dotenv.config({ quiet: true });
+}
 
 function intFromEnv(name, fallback) {
   const raw = process.env[name];

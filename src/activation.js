@@ -112,6 +112,8 @@ export async function activateRelease({
 /**
  * Undo an activation whose live check failed, but only if nothing else has
  * been activated since. `apply` switches the target back.
+ * `previousReleaseId` null (first deployment) records a null pointer: the
+ * project then has no live release.
  */
 export async function revertActivation({
   project = "default",

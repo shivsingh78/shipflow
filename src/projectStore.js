@@ -66,13 +66,20 @@ export async function resolveSiteProject(hostname, fallbackProject) {
 
   if (fallbackProject) return fallbackProject;
 
+  // Each project's newest pointer; projects taken offline (null) are skipped
+  // so a failed first deploy cannot hide another project's live site.
   const recent = await pool.query(
     `
-    SELECT a.project
-    FROM activations a
-    LEFT JOIN projects p ON p.name = a.project
-    WHERE p.name IS NULL OR (p.target = 'shipflow' AND p.hostname IS NULL)
-    ORDER BY a.id DESC
+    SELECT latest.project
+    FROM (
+      SELECT DISTINCT ON (project) project, release_id, id
+      FROM activations
+      ORDER BY project, id DESC
+    ) latest
+    LEFT JOIN projects p ON p.name = latest.project
+    WHERE latest.release_id IS NOT NULL
+      AND (p.name IS NULL OR (p.target = 'shipflow' AND p.hostname IS NULL))
+    ORDER BY latest.id DESC
     LIMIT 1
     `
   );

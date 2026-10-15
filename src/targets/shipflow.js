@@ -33,6 +33,10 @@ export const shipflowTarget = {
     // The pointer row inserted by activateRelease() is the activation.
   },
 
+  async deactivate() {
+    // The null pointer row inserted by revertActivation() stops serving.
+  },
+
   async verifyLive({ releaseId, targetConfig }) {
     const result = await verifyActive({ releaseId, hostname: targetConfig.hostname });
     return {

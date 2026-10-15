@@ -14,7 +14,7 @@
     "dev": "nodemon --ignore output/ index.js",
     "dev:worker": "nodemon --ignore output/ worker.js",
     "migrate": "node src/migrate.js",
-    "test": "node --test \"test/unit/*.test.js\"",
+    "test": "node --test --import ./test/unit/setup.js \"test/unit/*.test.js\"",
     "test:e2e": "sh test/e2e/run.sh"
   },
   "bin": {

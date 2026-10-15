@@ -483,7 +483,9 @@ async function safeNotify(releaseId, type, message) {
 
 /**
  * Switch a project back to `previousReleaseId` after a failed live check.
- * Returns a sentence describing what happened.
+ * When nothing was live before (first deployment), take the failed release
+ * offline instead, so it is never left serving. Returns a sentence
+ * describing what happened.
  */
 export async function revertToPrevious({
   project,
@@ -495,13 +497,39 @@ export async function revertToPrevious({
   store,
   scratchDir,
   log,
+  revert = revertActivation,
+  loadRelease = getRelease,
 }) {
   if (!previousReleaseId) {
-    return "no earlier release to restore";
+    try {
+      const failedCtx = createTargetContext({
+        project,
+        releaseId,
+        settings,
+        secrets,
+        store,
+        scratchDir,
+        log,
+      });
+
+      // Records a null pointer: the project has no live release.
+      const reverted = await revert({
+        project,
+        releaseId,
+        previousReleaseId: null,
+        apply: () => target.deactivate(failedCtx),
+      });
+
+      return reverted
+        ? `no earlier release existed, so ${releaseId} was taken offline and is not served`
+        : "a newer activation has since replaced it";
+    } catch (error) {
+      return `no earlier release existed and taking ${releaseId} offline ALSO FAILED: ${error.message}`;
+    }
   }
 
   try {
-    const previous = await getRelease(previousReleaseId);
+    const previous = await loadRelease(previousReleaseId);
     const previousCtx = createTargetContext({
       project,
       releaseId: previousReleaseId,
@@ -513,7 +541,7 @@ export async function revertToPrevious({
       log,
     });
 
-    const reverted = await revertActivation({
+    const reverted = await revert({
       project,
       releaseId,
       previousReleaseId,

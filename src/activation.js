@@ -1,47 +1,56 @@
 import { pool } from "./db.js";
 
-// Serializes activations from the worker (deploy) and API (rollback).
-const ACTIVATION_LOCK = 4_242_001;
+export class StaleReleaseError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "StaleReleaseError";
+    this.statusCode = 409;
+  }
+}
 
 /**
- * The active release is the newest row in `activations`. Switching is a
- * single INSERT, so the live site moves from one complete, immutable
- * artifact to another with no window where it is empty.
+ * A DEPLOY activation must never replace a live release that was created
+ * after the candidate (for example a stalled, older job finishing late).
+ * Rollbacks and reverts deliberately activate older releases.
  */
-export async function getActiveReleaseId() {
-  const result = await pool.query(
-    `SELECT release_id FROM activations ORDER BY id DESC LIMIT 1`
-  );
+export function isStaleCandidate({ action, candidateSeq, activeSeq }) {
+  return action === "DEPLOY" && activeSeq != null && candidateSeq < activeSeq;
+}
+
+const LATEST_ACTIVATION = `
+  SELECT a.release_id, r.id AS seq
+  FROM activations a
+  LEFT JOIN releases r ON r.release_id = a.release_id
+  WHERE a.project = $1
+  ORDER BY a.id DESC
+  LIMIT 1
+`;
+
+/**
+ * The active release of a project is the newest row in `activations` for
+ * that project.
+ */
+export async function getActiveReleaseId(project = "default") {
+  const result = await pool.query(LATEST_ACTIVATION, [project]);
 
   return result.rows[0]?.release_id ?? null;
 }
 
-export async function activateRelease({ releaseId, action }) {
+async function withProjectLock(project, work) {
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
-    await client.query("SELECT pg_advisory_xact_lock($1)", [
-      ACTIVATION_LOCK,
-    ]);
-
-    const current = await client.query(
-      `SELECT release_id FROM activations ORDER BY id DESC LIMIT 1`
-    );
-
-    const previousReleaseId = current.rows[0]?.release_id ?? null;
-
+    // Serializes activations of one project (worker deploys, API rollbacks).
     await client.query(
-      `
-      INSERT INTO activations (release_id, previous_release_id, action)
-      VALUES ($1, $2, $3)
-      `,
-      [releaseId, previousReleaseId, action]
+      "SELECT pg_advisory_xact_lock(hashtext('shipflow-activation:' || $1))",
+      [project]
     );
+
+    const result = await work(client);
 
     await client.query("COMMIT");
-
-    return { releaseId, previousReleaseId };
+    return result;
   } catch (error) {
     await client.query("ROLLBACK").catch(() => {});
     throw error;
@@ -51,41 +60,84 @@ export async function activateRelease({ releaseId, action }) {
 }
 
 /**
- * Undo an activation whose live check failed, but only if nothing else has
- * been activated since.
+ * Make `releaseId` the live release of `project`.
+ *
+ * `apply` (optional) performs the target's own switch (for example an SSH
+ * symlink swap) while the lock is held. If it throws, nothing is recorded.
+ * The pointer row is inserted only after `apply` succeeds.
  */
-export async function revertActivation({ releaseId, previousReleaseId }) {
-  const client = await pool.connect();
-
-  try {
-    await client.query("BEGIN");
-    await client.query("SELECT pg_advisory_xact_lock($1)", [
-      ACTIVATION_LOCK,
-    ]);
-
-    const current = await client.query(
-      `SELECT release_id FROM activations ORDER BY id DESC LIMIT 1`
+export async function activateRelease({
+  project = "default",
+  releaseId,
+  action,
+  apply,
+}) {
+  return withProjectLock(project, async (client) => {
+    const candidate = await client.query(
+      "SELECT id FROM releases WHERE release_id = $1",
+      [releaseId]
     );
+    const current = await client.query(LATEST_ACTIVATION, [project]);
 
-    const reverted = current.rows[0]?.release_id === releaseId;
+    const previousReleaseId = current.rows[0]?.release_id ?? null;
 
-    if (reverted) {
-      await client.query(
-        `
-        INSERT INTO activations (release_id, previous_release_id, action)
-        VALUES ($1, $2, 'REVERT')
-        `,
-        [previousReleaseId, releaseId]
+    if (
+      isStaleCandidate({
+        action,
+        candidateSeq: candidate.rows[0]?.id,
+        activeSeq: current.rows[0]?.seq,
+      })
+    ) {
+      throw new StaleReleaseError(
+        `Newer release ${previousReleaseId} is already live; refusing to activate older release ${releaseId}`
       );
     }
 
-    await client.query("COMMIT");
+    if (apply) {
+      await apply({ previousReleaseId });
+    }
 
-    return reverted;
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => {});
-    throw error;
-  } finally {
-    client.release();
-  }
+    await client.query(
+      `
+      INSERT INTO activations (project, release_id, previous_release_id, action)
+      VALUES ($1, $2, $3, $4)
+      `,
+      [project, releaseId, previousReleaseId, action]
+    );
+
+    return { project, releaseId, previousReleaseId };
+  });
+}
+
+/**
+ * Undo an activation whose live check failed, but only if nothing else has
+ * been activated since. `apply` switches the target back.
+ */
+export async function revertActivation({
+  project = "default",
+  releaseId,
+  previousReleaseId,
+  apply,
+}) {
+  return withProjectLock(project, async (client) => {
+    const current = await client.query(LATEST_ACTIVATION, [project]);
+
+    if (current.rows[0]?.release_id !== releaseId) {
+      return false;
+    }
+
+    if (apply) {
+      await apply({ releaseId: previousReleaseId });
+    }
+
+    await client.query(
+      `
+      INSERT INTO activations (project, release_id, previous_release_id, action)
+      VALUES ($1, $2, $3, 'REVERT')
+      `,
+      [project, previousReleaseId, releaseId]
+    );
+
+    return true;
+  });
 }

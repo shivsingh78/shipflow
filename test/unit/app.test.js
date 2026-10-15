@@ -182,10 +182,10 @@ test("deploy queues a valid release", async () => {
 
   assert.equal(response.status, 202);
   assert.equal((await response.json()).release.release_id, "NewRel01");
-  assert.deepEqual(state.queued.at(-1), {
-    releaseId: "NewRel01",
-    repoUrl: "https://github.com/shiv/site",
-  });
+  // The job carries only the ID; the worker reads everything else from
+  // the release row.
+  assert.deepEqual(state.queued.at(-1), { releaseId: "NewRel01" });
+  assert.equal((await (await fetch(`${apiUrl}/releases/NewRel01`, { headers: auth })).json()).release.repo_url, "https://github.com/shiv/site");
 });
 
 test("deploy refuses when the queue is full", async () => {

@@ -145,3 +145,4 @@ vite.config.ts.timestamp-*
 # ShipFlow local state
 output/
 test/e2e/last-run.log
+artifacts/

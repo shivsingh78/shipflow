@@ -10,6 +10,7 @@ DOCKER="${DOCKER:-docker}"
 export DB_PASSWORD="e2e-db-password"
 export DB_USER="shipflow"
 export DB_NAME="shipflow"
+export SHIPFLOW_SANDBOX_NETWORK_NAME="shipflow-e2e-sandbox"
 
 compose() {
   "$DOCKER" compose -p shipflow-e2e -f docker-compose.yml -f docker-compose.e2e.yml "$@"
@@ -26,6 +27,6 @@ cleanup() {
 trap cleanup EXIT
 
 compose build api
-compose build fixtures
-compose up -d --wait postgres redis s3 fixtures api worker
+compose build fixtures vps
+compose up -d --wait postgres redis s3 fixtures vps api egress-proxy worker
 compose run --rm e2e

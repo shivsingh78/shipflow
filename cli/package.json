@@ -1,0 +1,29 @@
+{
+  "name": "shipflow-cli",
+  "version": "0.1.0",
+  "description": "CLI for ShipFlow, a self-hosted CI/CD and static-site deployment server",
+  "type": "module",
+  "bin": {
+    "shipflow": "./index.js"
+  },
+  "files": [
+    "index.js",
+    "deploy.js",
+    "lib/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
+  },
+  "keywords": ["cicd", "deployment", "cli", "self-hosted", "static-site"],
+  "author": "Shiv Singh Baghel",
+  "license": "ISC",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shivsingh78/shipflow.git",
+    "directory": "cli"
+  }
+}

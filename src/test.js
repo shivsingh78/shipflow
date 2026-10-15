@@ -17,8 +17,29 @@ export async function testRelease({
   sandbox,
   packageJson,
   packageManager,
+  testConfig = "auto",
   log = async () => {},
 }) {
+  if (testConfig === "none") {
+    if (config.requireTests) {
+      throw new Error("Tests are required but build.test is \"none\"");
+    }
+
+    await log("Tests SKIPPED: disabled in configuration (build.test: none)", "WARN");
+    return { releaseId, workspacePath, testStatus: "SKIPPED" };
+  }
+
+  if (testConfig !== "auto") {
+    await log(`Test command: ${testConfig}`);
+
+    const result = await sandbox.exec("Tests", ["sh", "-c", testConfig], {
+      timeoutMs: config.testTimeoutMs,
+    });
+
+    await log(`Test output:\n${result.output}`);
+    return { releaseId, workspacePath, testStatus: "PASSED" };
+  }
+
   const kind = classifyTestScript(packageJson);
 
   if (kind !== "PRESENT") {

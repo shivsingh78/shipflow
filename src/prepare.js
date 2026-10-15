@@ -4,7 +4,7 @@ import path from "path";
 
 import { config } from "./config.js";
 import { getAllFiles, toObjectKey } from "./file.js";
-import { uploadFile } from "./aws.js";
+import { contentTypeFor } from "./artifactStore.js";
 import { runCommand, runCommandOrThrow } from "./runCommand.js";
 
 // git needs nothing from the worker environment; in particular it must not
@@ -18,12 +18,31 @@ function gitEnvironment() {
   };
 }
 
+const PULL_REF = /^refs\/pull\/\d{1,9}\/head$/;
+const COMMIT = /^[0-9a-f]{40}$/;
+const BRANCH = /^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]{1,200}$/;
+
+/**
+ * Classify a ref: a branch name, a GitHub pull-request head
+ * (refs/pull/<n>/head), or a full commit SHA. Anything else is rejected.
+ */
+export function classifyRef(ref) {
+  if (!ref) return { kind: "default" };
+  if (PULL_REF.test(ref) || COMMIT.test(ref)) return { kind: "fetch", ref };
+  if (BRANCH.test(ref) && !ref.startsWith("refs/")) return { kind: "branch", ref };
+  throw new Error(`Invalid git ref ${JSON.stringify(ref)}`);
+}
+
 export async function prepareRelease({
   releaseId,
   repoUrl,
+  ref = null,
+  store,
+  snapshot = true,
   workspaceRoot = config.workspaceRoot,
   log = async () => {},
 }) {
+  const refInfo = classifyRef(ref);
   const releaseRoot = path.join(workspaceRoot, releaseId);
   const workspacePath = path.join(releaseRoot, "source");
 
@@ -31,26 +50,30 @@ export async function prepareRelease({
   await fs.rm(releaseRoot, { recursive: true, force: true });
   await fs.mkdir(releaseRoot, { recursive: true });
 
-  await log(`Cloning ${repoUrl}`);
+  await log(`Cloning ${repoUrl}${ref ? ` (${ref})` : ""}`);
 
-  await runCommandOrThrow(
-    "git clone",
-    "git",
-    [
-      "-c", "protocol.file.allow=never",
-      "clone",
-      "--depth", "1",
-      "--single-branch",
-      "--no-tags",
-      "--",
-      repoUrl,
-      workspacePath,
-    ],
-    {
+  const git = (label, args) =>
+    runCommandOrThrow(label, "git", ["-c", "protocol.file.allow=never", ...args], {
       env: gitEnvironment(),
       timeoutMs: config.cloneTimeoutMs,
-    }
-  );
+    });
+
+  await git("git clone", [
+    "clone",
+    "--depth", "1",
+    "--single-branch",
+    "--no-tags",
+    ...(refInfo.kind === "branch" ? ["--branch", refInfo.ref] : []),
+    "--",
+    repoUrl,
+    workspacePath,
+  ]);
+
+  if (refInfo.kind === "fetch") {
+    // Pull-request heads and exact commits are fetched after the clone.
+    await git("git fetch", ["-C", workspacePath, "fetch", "--depth", "1", "--no-tags", "origin", refInfo.ref]);
+    await git("git checkout", ["-C", workspacePath, "checkout", "--quiet", "--detach", "FETCH_HEAD"]);
+  }
 
   const revision = await runCommand(
     "git",
@@ -66,6 +89,10 @@ export async function prepareRelease({
 
   await log(`Cloned commit ${commitSha}`);
 
+  if (!snapshot) {
+    return { releaseId, releaseRoot, workspacePath, commitSha, fileCount: 0 };
+  }
+
   // Store an immutable snapshot of the source next to the build artifact.
   const skipped = [];
   const files = await getAllFiles(workspacePath, {
@@ -80,9 +107,10 @@ export async function prepareRelease({
   }
 
   for (const file of files) {
-    await uploadFile(
+    await store.put(
       toObjectKey(`releases/${releaseId}/source`, workspacePath, file),
-      file
+      file,
+      contentTypeFor(file)
     );
   }
 

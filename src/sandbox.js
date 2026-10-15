@@ -24,13 +24,13 @@ const SANDBOX_UID = 1000;
  * - "none": runs on the worker with an allowlisted environment.
  *   Local development only: the code can still read worker files.
  */
-export async function createSandbox({ releaseId, workspacePath }) {
+export async function createSandbox({ releaseId, workspacePath, buildEnv = {} }) {
   if (config.sandbox === "docker") {
-    return createDockerSandbox({ releaseId, workspacePath });
+    return createDockerSandbox({ releaseId, workspacePath, buildEnv });
   }
 
   if (config.sandbox === "none") {
-    return createLocalSandbox({ releaseId, workspacePath });
+    return createLocalSandbox({ releaseId, workspacePath, buildEnv });
   }
 
   throw new Error(
@@ -56,7 +56,28 @@ async function docker(label, args, timeoutMs = 120_000) {
   return runCommandOrThrow(label, DOCKER, args, { timeoutMs });
 }
 
-async function createDockerSandbox({ releaseId, workspacePath }) {
+/**
+ * Variables that route package-manager traffic through the egress proxy.
+ * They contain no secrets.
+ */
+export function proxyEnvironment(proxyUrl) {
+  if (!proxyUrl) {
+    return [];
+  }
+
+  return [
+    ...[
+      "HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy",
+      "npm_config_https_proxy", "npm_config_proxy",
+      "YARN_HTTPS_PROXY", "YARN_HTTP_PROXY",
+    ].map((name) => `${name}=${proxyUrl}`),
+    // Node's built-in fetch (used by Corepack to download pnpm/yarn)
+    // only honours the variables above when this is set (Node >= 22.21).
+    "NODE_USE_ENV_PROXY=1",
+  ];
+}
+
+async function createDockerSandbox({ releaseId, workspacePath, buildEnv = {} }) {
   const name = `shipflow-build-${releaseId.toLowerCase()}-${crypto
     .randomBytes(3)
     .toString("hex")}`;
@@ -77,13 +98,15 @@ async function createDockerSandbox({ releaseId, workspacePath }) {
       "--memory-swap", config.sandboxMemory,
       "--cpus", config.sandboxCpus,
       "--pids-limit", String(config.sandboxPidsLimit),
-      "--network", "bridge",
+      "--network", config.sandboxNetwork,
       "--add-host", "host.docker.internal:127.0.0.1",
       "--init",
       "-e", "CI=true",
       "-e", "HOME=/home/node",
       "-e", "COREPACK_ENABLE_DOWNLOAD_PROMPT=0",
       "-e", "npm_config_update_notifier=false",
+      ...proxyEnvironment(config.egressProxy).flatMap((pair) => ["-e", pair]),
+      ...Object.entries(buildEnv).flatMap(([key, value]) => ["-e", `${key}=${value}`]),
       config.sandboxImage,
       "tail", "-f", "/dev/null",
     ],
@@ -130,7 +153,7 @@ async function createDockerSandbox({ releaseId, workspacePath }) {
 
     async disableNetwork() {
       await docker("Disconnecting sandbox network", [
-        "network", "disconnect", "bridge", name,
+        "network", "disconnect", config.sandboxNetwork, name,
       ]);
     },
 
@@ -153,13 +176,13 @@ async function createDockerSandbox({ releaseId, workspacePath }) {
   };
 }
 
-async function createLocalSandbox({ releaseId, workspacePath }) {
+async function createLocalSandbox({ releaseId, workspacePath, buildEnv = {} }) {
   console.warn(
     `[sandbox] SHIPFLOW_SANDBOX=none: release ${releaseId} runs WITHOUT isolation. ` +
       "Use only with trusted repositories in local development."
   );
 
-  const env = await createBuildEnvironment(releaseId);
+  const env = { ...(await createBuildEnvironment(releaseId)), ...buildEnv };
 
   return {
     kind: "none",

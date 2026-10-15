@@ -50,3 +50,51 @@ CREATE TABLE IF NOT EXISTS activations (
   action VARCHAR(20) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ---------------------------------------------------------------- v2
+-- Projects, per-project live pointers, secrets and webhook dedupe.
+-- Existing rows belong to the implicit project "default".
+
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS project VARCHAR(64) NOT NULL DEFAULT 'default';
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS mode VARCHAR(10) NOT NULL DEFAULT 'deploy';
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS ref VARCHAR(255);
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS trigger VARCHAR(20) NOT NULL DEFAULT 'cli';
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS target VARCHAR(40) NOT NULL DEFAULT 'shipflow';
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS config JSONB;
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE INDEX IF NOT EXISTS releases_project_idx ON releases (project, id);
+
+CREATE TABLE IF NOT EXISTS projects (
+  name VARCHAR(64) PRIMARY KEY,
+  repo_url TEXT NOT NULL,
+  target VARCHAR(40) NOT NULL,
+  hostname VARCHAR(253) UNIQUE,
+  config JSONB NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE activations ADD COLUMN IF NOT EXISTS project VARCHAR(64) NOT NULL DEFAULT 'default';
+CREATE INDEX IF NOT EXISTS activations_project_idx ON activations (project, id);
+
+-- Values are AES-256-GCM encrypted with SHIPFLOW_SECRETS_KEY; plaintext is
+-- never stored or returned by the API.
+CREATE TABLE IF NOT EXISTS project_secrets (
+  project VARCHAR(64) NOT NULL,
+  name VARCHAR(64) NOT NULL,
+  ciphertext TEXT NOT NULL,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (project, name)
+);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  delivery_id VARCHAR(100) PRIMARY KEY,
+  event VARCHAR(40) NOT NULL,
+  project VARCHAR(64),
+  release_id VARCHAR(20),
+  outcome TEXT,
+  received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS artifacts_pruned BOOLEAN NOT NULL DEFAULT FALSE;

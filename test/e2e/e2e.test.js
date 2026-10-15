@@ -76,10 +76,20 @@ test("probe: repository code sees no secrets, worker files or internal services"
     assert.deepEqual(phase.leakedEnv, []);
     assert.deepEqual(phase.readablePaths, []);
     assert.deepEqual(phase.reachableInternal, []);
+    assert.deepEqual(phase.reachableGateway, [], `host gateway ports (${phase.gateway})`);
+    assert.equal(phase.metadataDirect, false, "cloud metadata IP");
+    assert.equal(phase.internetDirect, false, "no direct internet");
   }
 
-  assert.equal(install.internet, true, "dependency install has network");
-  assert.equal(build.internet, false, "build has no network");
+  // During install the only way out is the egress proxy, which allows the
+  // registry over 443 and refuses everything else.
+  assert.match(install.proxyResults["registry.npmjs.org:443"], / 200 /);
+  for (const target of ["169.254.169.254:80", "api:8000", "postgres:5432", "example.com:443", "registry.npmjs.org:80"]) {
+    assert.match(install.proxyResults[target], / 403 /, target);
+  }
+
+  // After install the sandbox has no network at all, proxy included.
+  assert.doesNotMatch(build.proxyResults["registry.npmjs.org:443"], / 200 /, "build has no network");
 });
 
 test("npm site: queued, built, tested, uploaded and served", PIPELINE_TIMEOUT, async () => {

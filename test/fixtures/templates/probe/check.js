@@ -7,7 +7,12 @@ let failed = false;
 for (const phase of ["install", "build", "test"]) {
   const result = JSON.parse(fs.readFileSync(`.probe-${phase}.json`, "utf8"));
 
-  for (const key of ["leakedEnv", "readablePaths", "reachableInternal"]) {
+  if (result.metadataDirect || result.internetDirect) {
+    console.error(`LEAK in ${phase}: direct network access (metadata=${result.metadataDirect}, internet=${result.internetDirect})`);
+    failed = true;
+  }
+
+  for (const key of ["leakedEnv", "readablePaths", "reachableInternal", "reachableGateway"]) {
     if (result[key].length > 0) {
       console.error(`LEAK in ${phase}: ${key} = ${result[key].join(", ")}`);
       failed = true;

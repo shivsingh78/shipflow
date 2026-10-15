@@ -11,6 +11,8 @@ x-app-environment: &app-environment
   REDIS_PORT: "6379"
   INTERNAL_API_URL: http://api:8000
   INTERNAL_SITE_URL: http://api:8080
+  # Used when no S3 bucket is configured (SHIPFLOW_ARTIFACT_STORE=local).
+  SHIPFLOW_ARTIFACT_DIR: /var/lib/shipflow/artifacts
 
 x-app-env-file: &app-env-file
   - path: .env
@@ -78,6 +80,9 @@ services:
     environment:
       <<: *app-environment
 
+    volumes:
+      - artifacts:/var/lib/shipflow/artifacts
+
     # Bound to localhost by default; put a TLS reverse proxy in front for
     # remote access, or set API_BIND / SITE_BIND deliberately.
     ports:
@@ -114,14 +119,52 @@ services:
       <<: *app-environment
       SHIPFLOW_SANDBOX: docker
       SHIPFLOW_WORKSPACE_ROOT: /workspaces
+      # Sandboxes join an internal-only network; their only way out is the
+      # egress proxy, and only while dependencies install.
+      SHIPFLOW_SANDBOX_NETWORK: ${SHIPFLOW_SANDBOX_NETWORK_NAME:-shipflow-sandbox}
+      SHIPFLOW_EGRESS_PROXY: http://egress-proxy:3128
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - workspaces:/workspaces
+      - artifacts:/var/lib/shipflow/artifacts
 
     depends_on:
       api:
         condition: service_healthy
+      egress-proxy:
+        condition: service_healthy
+
+
+  # Allows sandboxes HTTPS access to package registries only (see
+  # src/egressProxy.js). Set SHIPFLOW_EGRESS_ALLOWLIST to change the list.
+  egress-proxy:
+    image: shipflow-app:latest
+    pull_policy: never
+    restart: unless-stopped
+    command: ["node", "src/egressProxy.js"]
+    user: node
+    environment:
+      SHIPFLOW_EGRESS_ALLOWLIST: ${SHIPFLOW_EGRESS_ALLOWLIST:-registry.npmjs.org,registry.yarnpkg.com,repo.yarnpkg.com}
+    networks:
+      - default
+      - sandbox
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3128/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    depends_on:
+      api:
+        condition: service_healthy
+
+
+networks:
+
+  # Internal: no route to the internet, the host, or other networks.
+  sandbox:
+    name: ${SHIPFLOW_SANDBOX_NETWORK_NAME:-shipflow-sandbox}
+    internal: true
 
 
 volumes:
@@ -131,3 +174,7 @@ volumes:
   redis_data:
 
   workspaces:
+
+  # Release artifacts when using local storage. Back this up: rollback
+  # needs it.
+  artifacts:

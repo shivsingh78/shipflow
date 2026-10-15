@@ -42,6 +42,22 @@ export const FIXTURES = {
     },
   },
 
+  // Takes long enough to be cancelled while it builds.
+  "slow-build": {
+    template: "static-site",
+    files: {
+      VERSION: "slow\n",
+      "package.json": JSON.stringify({
+        name: "shipflow-fixture-site",
+        version: "1.0.0",
+        private: true,
+        type: "module",
+        scripts: { build: "sleep 40 && node build.js", test: "node test.js" },
+        dependencies: { "escape-html": "1.0.3" },
+      }, null, 2),
+    },
+  },
+
   // Builds an index.html that references an asset the build never writes;
   // tests pass, so the release reaches DEPLOY and fails artifact validation.
   "missing-asset": {

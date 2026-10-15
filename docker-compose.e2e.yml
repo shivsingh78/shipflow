@@ -18,6 +18,9 @@ x-e2e-environment: &e2e-environment
   DB_USER: shipflow
   DB_NAME: shipflow
   DB_PASSWORD: ${DB_PASSWORD}
+  # Test-only values.
+  SHIPFLOW_SECRETS_KEY: "0000000000000000000000000000000000000000000000000000000000000001"
+  SHIPFLOW_GITHUB_WEBHOOK_SECRET: e2e-webhook-secret
 
 services:
 
@@ -45,6 +48,19 @@ services:
       timeout: 3s
       retries: 30
 
+  # Stand-in for a user's own server (OpenSSH + nginx) for the "ssh" target.
+  vps:
+    build:
+      context: test/e2e/vps
+    image: shipflow-e2e-vps:latest
+    volumes:
+      - vps-keys:/keys
+    healthcheck:
+      test: ["CMD", "test", "-f", "/keys/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
   # The e2e stack must never see real credentials from .env.
   api:
     env_file: !reset []
@@ -65,15 +81,24 @@ services:
     image: shipflow-app:latest
     pull_policy: never
     profiles: ["runner"]
-    command: ["node", "--test", "--test-concurrency=1", "test/e2e/e2e.test.js"]
+    command: ["node", "--test", "--test-concurrency=1", "test/e2e/e2e.test.js", "test/e2e/targets.test.js"]
     environment:
       SHIPFLOW_API_URL: http://api:8000
       SHIPFLOW_SITE_URL: http://api:8080
       SHIPFLOW_API_TOKEN: e2e-test-token-0123456789abcdef0123456789
+      SHIPFLOW_WEBHOOK_SECRET: e2e-webhook-secret
+      XDG_CONFIG_HOME: /tmp/shipflow-config
+    volumes:
+      - vps-keys:/keys:ro
     depends_on:
+      vps:
+        condition: service_healthy
       api:
         condition: service_healthy
       worker:
         condition: service_started
       fixtures:
         condition: service_healthy
+
+volumes:
+  vps-keys:

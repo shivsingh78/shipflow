@@ -5,13 +5,19 @@ export async function createRelease({
   repoUrl,
   status,
   currentStage,
+  project = "default",
+  mode = "deploy",
+  ref = null,
+  trigger = "cli",
+  target = "shipflow",
+  config = null,
 }) {
   const result = await pool.query(
     `
     INSERT INTO releases
-      (release_id, repo_url, status, current_stage)
+      (release_id, repo_url, status, current_stage, project, mode, ref, trigger, target, config)
     VALUES
-      ($1, $2, $3, $4)
+      ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
     RETURNING *
     `,
     [
@@ -19,6 +25,12 @@ export async function createRelease({
       repoUrl,
       status,
       currentStage,
+      project,
+      mode,
+      ref,
+      trigger,
+      target,
+      config,
     ]
   );
 
@@ -76,14 +88,49 @@ export async function updateRelease(
   return result.rows[0];
 }
 
-export async function getAllReleases(limit = 50) {
+export async function getAllReleases(limit = 50, project = null) {
   const result = await pool.query(`
     SELECT *
     FROM releases
+    WHERE ($2::text IS NULL OR project = $2)
     ORDER BY id DESC
     LIMIT $1
-    `, [limit])
+    `, [limit, project])
 
     return result.rows;
 
+}
+
+export async function requestCancel(releaseId) {
+  const result = await pool.query(
+    `
+    UPDATE releases
+    SET cancel_requested = TRUE, updated_at = CURRENT_TIMESTAMP
+    WHERE release_id = $1 AND status IN ('QUEUED', 'RUNNING')
+    RETURNING *
+    `,
+    [releaseId]
+  );
+
+  return result.rows[0];
+}
+
+/**
+ * Atomically move a release from one status to another. Returns the row, or
+ * undefined when the release was not in `from` (someone else moved it).
+ */
+export async function transitionRelease(releaseId, from, to, errorMessage = null) {
+  const result = await pool.query(
+    `
+    UPDATE releases
+    SET status = $3,
+        error_message = COALESCE($4, error_message),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE release_id = $1 AND status = ANY($2)
+    RETURNING *
+    `,
+    [releaseId, from, to, errorMessage]
+  );
+
+  return result.rows[0];
 }

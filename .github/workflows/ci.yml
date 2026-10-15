@@ -1,27 +1,53 @@
 name: CI
 
+# Tests and validates the ShipFlow repository itself. It never publishes or
+# deploys, and it uses no repository secrets: the end-to-end stack runs
+# against an S3 mock with throw-away credentials defined in
+# docker-compose.e2e.yml.
+#
+# Fork pull requests are safe: `pull_request` (not `pull_request_target`)
+# gives them a read-only token and no secrets.
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
 
 permissions:
   contents: read
 
+# A newer push or PR update cancels the older run for the same branch. The
+# event name is part of the key so a push run and a pull-request run for the
+# same branch do not cancel each other.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit:
+    name: unit
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      # Actions are pinned to commit SHAs (version in the comment).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      # Corepack provides the pnpm version pinned in package.json
+      # ("packageManager"). It must be enabled before setup-node so the
+      # pnpm dependency cache can be configured.
+      - run: corepack enable
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-
-      - run: corepack enable
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
 
       - run: pnpm install --frozen-lockfile
 
+      # There is no lint, type-check or build script in package.json, so
+      # the only quality gate is the unit suite.
       - run: pnpm test
 
       - name: Validate compose files
@@ -32,18 +58,26 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.e2e.yml --profile runner config --quiet
 
   e2e:
+    name: e2e
     needs: unit
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
+      # Builds the images, starts API, worker, PostgreSQL, Redis, an S3 mock
+      # and a fixture git server, then runs the scenarios through the real
+      # CLI. The script exits non-zero if any scenario fails.
       - name: End-to-end release lifecycle
         run: sh test/e2e/run.sh
 
       - name: Upload service logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: e2e-logs
           path: test/e2e/last-run.log
+          if-no-files-found: ignore
+          retention-days: 7

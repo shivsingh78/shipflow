@@ -1,4 +1,5 @@
 import {
+  DeleteObjectsCommand,
   PutObjectCommand,
   ListObjectsV2Command,
   GetObjectCommand,
@@ -37,12 +38,14 @@ export function isNotFoundError(error) {
 
 export const uploadFile = async (
   fileName,
-  localFilePath
+  localFilePath,
+  knownContentType
 ) => {
   const fileContent = await fs.readFile(localFilePath);
 
   // Detect MIME type from the local file
   const contentType =
+    knownContentType ||
     mime.contentType(
       path.basename(localFilePath)
     ) || "application/octet-stream";
@@ -89,4 +92,19 @@ export const getS3Object = async (key) => {
   });
 
   return await s3.send(command);
+};
+
+export const deleteS3Objects = async (keys) => {
+  // DeleteObjects accepts at most 1000 keys per request.
+  for (let i = 0; i < keys.length; i += 1000) {
+    await s3.send(
+      new DeleteObjectsCommand({
+        Bucket: bucketName,
+        Delete: {
+          Objects: keys.slice(i, i + 1000).map((Key) => ({ Key })),
+          Quiet: true,
+        },
+      })
+    );
+  }
 };

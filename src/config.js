@@ -19,6 +19,23 @@ function intFromEnv(name, fallback) {
   return value;
 }
 
+// Non-negative integer; 0 disables the feature it controls.
+function intOrZero(name, fallback) {
+  const raw = process.env[name];
+
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
+
+  const value = Number(raw);
+
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error(`${name} must be a non-negative integer`);
+  }
+
+  return value;
+}
+
 function listFromEnv(name, fallback) {
   const raw = process.env[name];
 
@@ -42,6 +59,9 @@ export const config = {
 
   apiToken: process.env.SHIPFLOW_API_TOKEN || "",
 
+  // Name of this ShipFlow installation (scopes sandbox labels, heartbeats).
+  instance: process.env.SHIPFLOW_INSTANCE || "shipflow",
+
   // Only repositories whose URL starts with one of these prefixes
   // can be deployed.
   allowedRepoPrefixes: listFromEnv(
@@ -57,6 +77,11 @@ export const config = {
   // "none" runs it directly on the worker and is for local development only.
   sandbox: process.env.SHIPFLOW_SANDBOX || "docker",
   sandboxImage: process.env.SHIPFLOW_SANDBOX_IMAGE || "node:22-alpine",
+  // Docker network for sandboxes. Use an `internal` network plus
+  // SHIPFLOW_EGRESS_PROXY so dependency installs can only reach the
+  // registry allowlist; the default bridge network is unrestricted.
+  sandboxNetwork: process.env.SHIPFLOW_SANDBOX_NETWORK || "bridge",
+  egressProxy: process.env.SHIPFLOW_EGRESS_PROXY || "",
   sandboxMemory: process.env.SHIPFLOW_SANDBOX_MEMORY || "1g",
   sandboxCpus: process.env.SHIPFLOW_SANDBOX_CPUS || "1",
   sandboxPidsLimit: intFromEnv("SHIPFLOW_SANDBOX_PIDS", 512),
@@ -65,6 +90,20 @@ export const config = {
   installTimeoutMs: intFromEnv("SHIPFLOW_INSTALL_TIMEOUT_MS", 600_000),
   buildTimeoutMs: intFromEnv("SHIPFLOW_BUILD_TIMEOUT_MS", 600_000),
   testTimeoutMs: intFromEnv("SHIPFLOW_TEST_TIMEOUT_MS", 300_000),
+
+  // Cost and disk controls.
+  keepReleases: intOrZero("SHIPFLOW_KEEP_RELEASES", 10),
+  logRetentionDays: intOrZero("SHIPFLOW_LOG_RETENTION_DAYS", 90),
+  minFreeDiskMb: intOrZero("SHIPFLOW_MIN_FREE_DISK_MB", 1024),
+
+  // 32-byte key (64 hex chars) that encrypts project secrets at rest.
+  secretsKey: process.env.SHIPFLOW_SECRETS_KEY || "",
+
+  // GitHub webhook shared secret; webhooks are disabled when empty.
+  githubWebhookSecret: process.env.SHIPFLOW_GITHUB_WEBHOOK_SECRET || "",
+
+  // Optional: serve this project at the site server's root for unknown hosts.
+  siteDefaultProject: process.env.SHIPFLOW_SITE_DEFAULT_PROJECT || "",
 
   maxArtifactFiles: intFromEnv("SHIPFLOW_MAX_ARTIFACT_FILES", 5000),
   maxArtifactBytes: intFromEnv(
@@ -87,6 +126,14 @@ export const config = {
   // URL shown to users for the active deployment.
   publicSiteUrl:
     process.env.PUBLIC_SITE_URL || "http://localhost:8080/",
+
+  // Where artifacts are stored: "s3" (needs S3_BUCKET_NAME) or "local"
+  // (a directory on this host). Defaults to s3 when a bucket is configured.
+  artifactStore:
+    process.env.SHIPFLOW_ARTIFACT_STORE ||
+    (process.env.S3_BUCKET_NAME ? "s3" : "local"),
+  artifactDir:
+    process.env.SHIPFLOW_ARTIFACT_DIR || path.join(process.cwd(), "artifacts"),
 
   s3: {
     bucket: process.env.S3_BUCKET_NAME,

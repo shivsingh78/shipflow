@@ -2,8 +2,9 @@ FROM node:22-alpine
 
 WORKDIR /app
 
-# git clones repositories; docker-cli lets the worker start build sandboxes.
-RUN apk add --no-cache git docker-cli
+# git clones repositories; docker-cli starts build sandboxes; openssh-client
+# deploys to "ssh" targets.
+RUN apk add --no-cache git docker-cli openssh-client
 
 # Enable pnpm through Corepack
 RUN corepack enable

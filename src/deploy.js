@@ -3,7 +3,7 @@ import path from "path";
 
 import { config } from "./config.js";
 import { getAllFiles, toObjectKey } from "./file.js";
-import { uploadFile, listS3Objects } from "./aws.js";
+import { contentTypeFor } from "./artifactStore.js";
 
 // Checked in order; the first one the build produced is deployed.
 const OUTPUT_DIRECTORIES = ["dist", "build", "out"];
@@ -15,7 +15,15 @@ export function artifactPrefix(releaseId) {
 /**
  * Copy the build output out of the sandbox into `destination`.
  */
-export async function collectBuildOutput({ sandbox, destination }) {
+export async function collectBuildOutput({ sandbox, destination, output = "auto" }) {
+  if (output !== "auto") {
+    if (await sandbox.copyOut(output, destination)) {
+      return output;
+    }
+
+    throw new Error(`Build output not found: build.output is "${output}/" but the build did not create it`);
+  }
+
   for (const directory of OUTPUT_DIRECTORIES) {
     if (await sandbox.copyOut(directory, destination)) {
       return directory;
@@ -124,6 +132,7 @@ export async function validateArtifact(artifactDirectory) {
  * This never touches the active deployment.
  */
 export async function uploadArtifact({
+  store,
   releaseId,
   artifactDirectory,
   files,
@@ -134,15 +143,12 @@ export async function uploadArtifact({
   for (const file of files) {
     const key = toObjectKey(prefix, artifactDirectory, file);
 
-    await uploadFile(key, file);
+    await store.put(key, file, contentTypeFor(file));
     expected.set(key, (await fs.stat(file)).size);
   }
 
   const uploaded = new Map(
-    (await listS3Objects(`${prefix}/`)).map((object) => [
-      object.Key,
-      object.Size,
-    ])
+    (await store.list(`${prefix}/`)).map((object) => [object.key, object.size])
   );
 
   for (const [key, size] of expected) {

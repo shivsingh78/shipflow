@@ -1,22 +1,28 @@
-const API_URL = (
-  process.env.SHIPFLOW_API_URL ||
-  "http://localhost:8000"
-).replace(/\/+$/, "");
+// HTTP client for the ShipFlow API. Connection settings come from
+// SHIPFLOW_API_URL / SHIPFLOW_API_TOKEN or the file written by
+// `shipflow login` (see lib/credentials.js).
+import { resolveConnection } from "./lib/credentials.js";
 
-const API_TOKEN = process.env.SHIPFLOW_API_TOKEN;
+let overrides = {};
+
+export function setConnectionOverrides(value) {
+  overrides = value;
+}
 
 export class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, body = {}) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.body = body;
   }
 }
 
 /**
  * Call the ShipFlow API and turn every failure into a readable ApiError.
  */
-async function request(method, path, body) {
+async function request(method, path, body, { timeoutMs = 30_000 } = {}) {
+  const { url: API_URL, token: API_TOKEN } = resolveConnection(overrides);
   const headers = {};
 
   if (API_TOKEN) {
@@ -34,7 +40,7 @@ async function request(method, path, body) {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
     const reason =
@@ -44,7 +50,7 @@ async function request(method, path, body) {
 
     throw new ApiError(
       `Cannot reach ShipFlow API at ${API_URL} (${reason}). ` +
-        "Is it running? Set SHIPFLOW_API_URL to use a different address.",
+        "Is it running? Set SHIPFLOW_API_URL or run `shipflow login --server <url>`.",
       0
     );
   }
@@ -63,50 +69,64 @@ async function request(method, path, body) {
 
     if (response.status === 401) {
       message += API_TOKEN
-        ? ". Check that SHIPFLOW_API_TOKEN matches the server."
-        : ". Set SHIPFLOW_API_TOKEN to the token configured on the server.";
+        ? ". Check that SHIPFLOW_API_TOKEN matches the server (or run `shipflow login` again)."
+        : ". Set SHIPFLOW_API_TOKEN to the token configured on the server, or run `shipflow login`.";
     }
 
     throw new ApiError(
       `${message} (HTTP ${response.status})`,
-      response.status
+      response.status,
+      data
     );
   }
 
   return data;
 }
 
+const enc = encodeURIComponent;
+
 /**
- * Create a new release.
+ * Create a new release. Accepts a repository URL (legacy form, project
+ * "default") or { project, ref, mode }.
  */
-export async function createRelease(repoUrl) {
-  return request("POST", "/deploy", { repoUrl });
+export async function createRelease(repoUrlOrOptions) {
+  return request(
+    "POST",
+    "/deploy",
+    typeof repoUrlOrOptions === "string" ? { repoUrl: repoUrlOrOptions } : repoUrlOrOptions
+  );
 }
 
 /**
  * Get the current state of a release.
  */
 export async function getReleaseStatus(releaseId) {
-  return request(
-    "GET",
-    `/releases/${encodeURIComponent(releaseId)}`
-  );
+  return request("GET", `/releases/${enc(releaseId)}`);
 }
 
-export async function getAllReleases() {
-  return request("GET", "/releases");
+export async function getAllReleases(project) {
+  return request("GET", `/releases${project ? `?project=${enc(project)}` : ""}`);
 }
 
 export async function getReleaseLogs(releaseId) {
-  return request(
-    "GET",
-    `/releases/${encodeURIComponent(releaseId)}/logs`
-  );
+  return request("GET", `/releases/${enc(releaseId)}/logs`);
 }
 
 export async function rollbackRelease(releaseId) {
-  return request(
-    "POST",
-    `/rollback/${encodeURIComponent(releaseId)}`
-  );
+  return request("POST", `/rollback/${enc(releaseId)}`, undefined, { timeoutMs: 600_000 });
 }
+
+export const cancelRelease = (releaseId) => request("POST", `/releases/${enc(releaseId)}/cancel`);
+export const whoami = () => request("GET", "/whoami");
+export const ready = () => request("GET", "/ready");
+export const health = () => request("GET", "/health");
+export const listProjects = () => request("GET", "/projects");
+export const getProject = (name) => request("GET", `/projects/${enc(name)}`);
+export const putProject = (name, config) => request("PUT", `/projects/${enc(name)}`, { config });
+export const listSecrets = (project) => request("GET", `/projects/${enc(project)}/secrets`);
+export const setSecret = (project, name, value) =>
+  request("PUT", `/projects/${enc(project)}/secrets/${enc(name)}`, { value });
+export const deleteSecret = (project, name) =>
+  request("DELETE", `/projects/${enc(project)}/secrets/${enc(name)}`);
+export const checkProjectTarget = (project) =>
+  request("POST", `/projects/${enc(project)}/check`, undefined, { timeoutMs: 120_000 });

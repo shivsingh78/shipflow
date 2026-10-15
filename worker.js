@@ -1,21 +1,23 @@
 import { Worker } from "bullmq";
-import IORedis from "ioredis";
-import { testRelease } from "./src/test.js";
-
-import { getRelease, updateRelease } from "./src/releaseStore.js";
-
-import { prepareRelease } from "./src/prepare.js";
-import { buildRelease } from "./src/build.js";
-import { deployRelease } from "./src/deploy.js";
-import { verifyRelease } from "./src/verify.js";
-import { notifyRelease } from "./src/notify.js";
-
-const connection = new IORedis({
-  host: process.env.REDIS_HOST || "127.0.0.1",
-  port: Number(process.env.REDIS_PORT || 6379),
-  maxRetriesPerRequest: null,
-});
+import { config } from "./src/config.js";
+import { connection } from "./src/queue.js";
+import { pool } from "./src/db.js";
+import { runMigrations } from "./src/migrate.js";
+import { removeOrphanedSandboxes } from "./src/sandbox.js";
 import { runPipeline } from "./src/pipeline.js";
+
+if (!config.s3.bucket) {
+  console.error("S3_BUCKET_NAME must be set");
+  process.exit(1);
+}
+
+if (!config.apiToken) {
+  console.error("SHIPFLOW_API_TOKEN must be set (used for candidate health checks)");
+  process.exit(1);
+}
+
+await runMigrations();
+await removeOrphanedSandboxes();
 
 const worker = new Worker(
   "deployment-queue",
@@ -36,6 +38,7 @@ const worker = new Worker(
   },
   {
     connection,
+    concurrency: config.workerConcurrency,
   }
 );
 
@@ -44,32 +47,19 @@ worker.on("completed", (job) => {
 });
 
 worker.on("failed", (job, err) => {
-  console.error(`❌ Job ${job?.id} failed`);
-  console.error(err);
+  console.error(`❌ Job ${job?.id} failed: ${err.message}`);
 });
 
-console.log("🚀 Deployment worker started");
+console.log(
+  `🚀 Deployment worker started (sandbox: ${config.sandbox}, concurrency: ${config.workerConcurrency})`
+);
 
-// const worker = new Worker(
-//   "deployment-queue",
-//   async (job) => {
-//     console.log("Processing deployment job...");
-//     console.log("Job ID:", job.id);
-//     console.log("Deployment ID:", job.data.id);
+async function shutdown(signal) {
+  console.log(`${signal} received, finishing current job before exit`);
+  await worker.close();
+  await pool.end().catch(() => {});
+  process.exit(0);
+}
 
-//     const id = job.data.id;
-
-//     // This is where the actual deployment logic
-//     // will happen.
-
-//     console.log(`Deployment ${id} processed successfully`);
-
-//     return {
-//       success: true,
-//       id,
-//     };
-//   },
-//   {
-//     connection,
-//   }
-// );
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

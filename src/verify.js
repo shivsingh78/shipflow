@@ -1,80 +1,76 @@
-import http from "http";
-import https from "https";
+import { config } from "./config.js";
 
-function request(url, timeout = 5000) {
-  return new Promise((resolve, reject) => {
-    const client = url.startsWith("https://")
-      ? https
-      : http;
+async function check(url, releaseId, headers = {}) {
+  let response;
 
-    const req = client.get(
-      url,
-      (res) => {
-        const statusCode =
-          res.statusCode ?? 0;
-
-        res.resume();
-
-        resolve(statusCode);
-      }
-    );
-
-    req.setTimeout(timeout, () => {
-      req.destroy();
-
-      reject(
-        new Error(
-          `Health check timed out after ${timeout}ms`
-        )
-      );
+  try {
+    response = await fetch(url, {
+      headers,
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
     });
-
-    req.on("error", reject);
-  });
-}
-
-export async function verifyRelease({
-  releaseId,
-  deploymentUrl,
-}) {
-  console.log(
-    `Verifying release ${releaseId}`
-  );
-
-  console.log(
-    `Deployment URL: ${deploymentUrl}`
-  );
-
-  if (!deploymentUrl) {
+  } catch (error) {
     throw new Error(
-      "Deployment URL is required for verification"
+      `Health check request to ${url} failed: ${error.cause?.code || error.message}`
     );
   }
 
-  const statusCode =
-    await request(deploymentUrl);
+  await response.body?.cancel();
 
-  console.log(
-    `Health check status: ${statusCode}`
-  );
+  const contentType = response.headers.get("content-type") || "";
+  const servedRelease = response.headers.get("x-shipflow-release");
 
-  if (
-    statusCode < 200 ||
-    statusCode >= 400
-  ) {
+  if (response.status !== 200) {
     throw new Error(
-      `Deployment health check failed with status ${statusCode}`
+      `Health check ${url} returned HTTP ${response.status}`
     );
   }
 
-  console.log(
-    `Verification successful for ${releaseId}`
-  );
+  if (!contentType.startsWith("text/html")) {
+    throw new Error(
+      `Health check ${url} returned content type "${contentType}", expected text/html`
+    );
+  }
+
+  if (servedRelease !== releaseId) {
+    throw new Error(
+      `Health check ${url} served release ${servedRelease ?? "(none)"}, expected ${releaseId}`
+    );
+  }
 
   return {
-    releaseId,
-    deploymentUrl,
-    statusCode,
-    healthy: true,
+    url,
+    statusCode: response.status,
+    contentType,
   };
+}
+
+/**
+ * HTTP check of the uploaded candidate through the real serving code,
+ * before it is made active.
+ */
+export async function verifyCandidate({ releaseId }) {
+  return check(
+    `${config.internalApiUrl}/preview/${releaseId}/`,
+    releaseId,
+    { Authorization: `Bearer ${config.apiToken}` }
+  );
+}
+
+/**
+ * HTTP check of the live site after activation.
+ */
+export async function verifyActive({ releaseId, attempts = 3 }) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      return await check(`${config.internalSiteUrl}/`, releaseId);
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  throw lastError;
 }

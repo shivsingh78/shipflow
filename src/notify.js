@@ -16,7 +16,21 @@ export async function notifyRelease({
     [releaseId, type, message]
   );
 
-  console.log("Notification created:", result.rows[0]);
+  console.log(`Notification ${type}: ${message}`);
 
   return result.rows[0];
+}
+
+export async function getReleaseNotifications(releaseId) {
+  const result = await pool.query(
+    `
+    SELECT id, release_id, type, message, created_at
+    FROM notifications
+    WHERE release_id = $1
+    ORDER BY id ASC
+    `,
+    [releaseId]
+  );
+
+  return result.rows;
 }

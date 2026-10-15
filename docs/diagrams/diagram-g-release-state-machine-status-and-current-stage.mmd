@@ -1,0 +1,18 @@
+%% title: Diagram G — Release state machine (status and current stage)
+%% maxheight: 120
+stateDiagram-v2
+  [*] --> QUEUED : POST /deploy (stage RELEASE)
+  QUEUED --> RUNNING : worker starts PREPARE
+  state RUNNING {
+    [*] --> PREPARE
+    PREPARE --> BUILD
+    BUILD --> TEST
+    TEST --> DEPLOY
+    DEPLOY --> VERIFY
+    VERIFY --> ACTIVATE
+  }
+  RUNNING --> SUCCESS : live check passes
+  RUNNING --> FAILED : any stage throws
+  QUEUED --> FAILED : job could not be queued
+  SUCCESS --> [*]
+  FAILED --> [*]

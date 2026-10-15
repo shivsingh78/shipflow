@@ -1,72 +1,101 @@
 import fs from "fs/promises";
+import os from "os";
 import path from "path";
-import simpleGit from "simple-git";
 
-import { getAllFiles } from "./file.js";
+import { config } from "./config.js";
+import { getAllFiles, toObjectKey } from "./file.js";
 import { uploadFile } from "./aws.js";
+import { runCommand, runCommandOrThrow } from "./runCommand.js";
 
-const git = simpleGit();
+// git needs nothing from the worker environment; in particular it must not
+// see AWS, database or API credentials.
+function gitEnvironment() {
+  return {
+    PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
+    HOME: os.tmpdir(),
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_CONFIG_NOSYSTEM: "1",
+  };
+}
 
 export async function prepareRelease({
   releaseId,
   repoUrl,
-  workspaceRoot = path.join(process.cwd(), "output"),
+  workspaceRoot = config.workspaceRoot,
+  log = async () => {},
 }) {
-  const workspacePath = path.join(
-    workspaceRoot,
-    releaseId
+  const releaseRoot = path.join(workspaceRoot, releaseId);
+  const workspacePath = path.join(releaseRoot, "source");
+
+  // A retried job must start from a clean directory.
+  await fs.rm(releaseRoot, { recursive: true, force: true });
+  await fs.mkdir(releaseRoot, { recursive: true });
+
+  await log(`Cloning ${repoUrl}`);
+
+  await runCommandOrThrow(
+    "git clone",
+    "git",
+    [
+      "-c", "protocol.file.allow=never",
+      "clone",
+      "--depth", "1",
+      "--single-branch",
+      "--no-tags",
+      "--",
+      repoUrl,
+      workspacePath,
+    ],
+    {
+      env: gitEnvironment(),
+      timeoutMs: config.cloneTimeoutMs,
+    }
   );
 
-  console.log(`Preparing release ${releaseId}`);
-  console.log(`Workspace: ${workspacePath}`);
+  const revision = await runCommand(
+    "git",
+    ["-C", workspacePath, "rev-parse", "HEAD"],
+    { env: gitEnvironment(), timeoutMs: 10_000 }
+  );
 
-  await fs.mkdir(workspaceRoot, {
-    recursive: true,
+  if (revision.exitCode !== 0) {
+    throw new Error("Repository is empty: no commit to deploy");
+  }
+
+  const commitSha = revision.output.trim();
+
+  await log(`Cloned commit ${commitSha}`);
+
+  // Store an immutable snapshot of the source next to the build artifact.
+  const skipped = [];
+  const files = await getAllFiles(workspacePath, {
+    ignore: [".git", "node_modules"],
+    skipped,
   });
 
-  // Clone repository
-  console.log("Cloning repository...");
-
-  await git.clone(
-    repoUrl,
-    workspacePath
-  );
-
-  console.log("Repository cloned");
-
-  // Scan files
-  console.log("Scanning files...");
-
-  const files = await getAllFiles(workspacePath);
-
-  console.log(`Found ${files.length} files`);
-
-  // Upload source artifacts
-  console.log("Uploading artifacts...");
+  if (files.length > config.maxArtifactFiles) {
+    throw new Error(
+      `Repository has ${files.length} files; the limit is ${config.maxArtifactFiles}`
+    );
+  }
 
   for (const file of files) {
-    const relativePath = path.relative(
-      workspacePath,
-      file
-    );
-
-    const key = `${releaseId}/${relativePath}`;
-
     await uploadFile(
-      key,
+      toObjectKey(`releases/${releaseId}/source`, workspacePath, file),
       file
     );
   }
 
-  console.log("Artifacts uploaded");
-
-  // IMPORTANT:
-  // Do NOT delete workspace here.
-  // Build will reuse it.
+  await log(
+    `Uploaded source snapshot (${files.length} files` +
+      (skipped.length ? `, ${skipped.length} symlinks skipped)` : ")")
+  );
 
   return {
     releaseId,
+    releaseRoot,
     workspacePath,
+    commitSha,
     fileCount: files.length,
   };
 }

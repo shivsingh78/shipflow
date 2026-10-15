@@ -1,0 +1,24 @@
+%% title: Diagram B2 — Release pipeline, storage and serving
+%% maxheight: 215
+flowchart TB
+  subgraph pipe["Worker: release pipeline (src/pipeline.js)"]
+    p1["PREPARE<br/>clone, source snapshot"] --> p2["BUILD<br/>install, build"]
+    p2 --> p3["TEST"]
+    p3 --> p4["DEPLOY<br/>validate, upload artifact"]
+    p4 --> p5["VERIFY<br/>HTTP check of the candidate"]
+    p5 --> p6["ACTIVATE<br/>move pointer, live check"]
+  end
+  sb["Docker sandbox<br/>untrusted code runs here"]
+  s3[("S3<br/>releases/{id}/build/")]
+  pg[("PostgreSQL<br/>activations")]
+  site["Site server :8080"]
+  live(("Live static site"))
+  p2 -.-> sb
+  p3 -.-> sb
+  p4 --> s3
+  p6 -->|"INSERT row"| pg
+  site -->|"newest activation"| pg
+  site -->|"GET files"| s3
+  site --> live
+  classDef untrusted fill:#ffebee,stroke:#c62828,color:#b71c1c;
+  class sb untrusted;

@@ -54,6 +54,8 @@ export async function updateRelease(
       deployment_url = COALESCE($5, deployment_url),
       artifact_path = COALESCE($6, artifact_path),
       public_deployment_url = COALESCE($7, public_deployment_url),
+      commit_sha = COALESCE($8, commit_sha),
+      test_status = COALESCE($9, test_status),
       updated_at = CURRENT_TIMESTAMP
     WHERE release_id = $1
     RETURNING *
@@ -65,40 +67,23 @@ export async function updateRelease(
       updates.errorMessage ?? null,
       updates.deploymentUrl ?? null,
       updates.artifactPath ?? null,
-        updates.publicDeploymentUrl ?? null,
+      updates.publicDeploymentUrl ?? null,
+      updates.commitSha ?? null,
+      updates.testStatus ?? null,
     ]
   );
 
   return result.rows[0];
 }
 
-export async function getPreviousSuccessfulRelease(
-  currentReleaseId
-) {
-  const result = await pool.query(
-    `
+export async function getAllReleases(limit = 50) {
+  const result = await pool.query(`
     SELECT *
     FROM releases
-    WHERE status = 'SUCCESS'
-      AND current_stage = 'VERIFY'
-      AND release_id != $1
-      AND artifact_path IS NOT NULL
     ORDER BY id DESC
-    LIMIT 1
-    `,
-    [currentReleaseId]
-  );
-
-  return result.rows[0];
-}
-
-export async function getAllReleases() {
-  const result = await pool.query(`
-    SELECT * 
-    FROM releases
-    ORDER BY id DESC
-    `)
+    LIMIT $1
+    `, [limit])
 
     return result.rows;
-  
+
 }

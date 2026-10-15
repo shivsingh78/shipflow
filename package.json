@@ -1,13 +1,20 @@
 {
   "name": "shipflow",
   "version": "1.0.0",
-  "description": "Release and deployment automation platform",
+  "description": "Self-hosted, CLI-first release and deployment automation for static sites",
   "main": "index.js",
   "packageManager": "pnpm@11.5.0",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
-    "dev": "nodemon -L --ignore output/ index.js",
-    "worker": "nodemon -L worker.js",
-    "build": "node build.js"
+    "start": "node index.js",
+    "worker": "node worker.js",
+    "dev": "nodemon --ignore output/ index.js",
+    "dev:worker": "nodemon --ignore output/ worker.js",
+    "migrate": "node src/migrate.js",
+    "test": "node --test \"test/unit/*.test.js\"",
+    "test:e2e": "sh test/e2e/run.sh"
   },
   "bin": {
     "shipflow": "./cli/index.js"
@@ -25,15 +32,11 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1073.0",
     "bullmq": "^5.79.0",
-    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "ioredis": "^5.11.1",
     "mime-types": "^3.0.2",
-    "pg": "^8.23.0",
-    "redis": "^6.0.0",
-    "shipflow": "link:",
-    "simple-git": "^3.36.0"
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.14"

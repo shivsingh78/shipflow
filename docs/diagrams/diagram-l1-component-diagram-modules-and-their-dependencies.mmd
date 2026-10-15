@@ -1,0 +1,52 @@
+%% title: Diagram L1 — Component diagram: modules and their dependencies
+%% layout: landscape
+flowchart LR
+  ci["cli/index.js<br/>command dispatch"] --> cd["cli/deploy.js<br/>request(), API calls"]
+  cd -->|"HTTP"| app
+  ver -.->|"HTTP"| app
+  subgraph APIP["API process: index.js"]
+    app["src/app.js<br/>createApiApp, createSiteApp<br/>requireToken, serveReleaseFile"]
+    val["validation.js"]
+    rb["rollback.js"]
+  end
+  subgraph WKP["Worker process: worker.js"]
+    pl["pipeline.js<br/>runPipeline"]
+    prep["prepare.js"]
+    bld["build.js"]
+    tst["test.js"]
+    dep["deploy.js"]
+    ver["verify.js"]
+  end
+  subgraph SH["Shared modules"]
+    act["activation.js"]
+    sb["sandbox.js"]
+    pm["packageManager.js"]
+    rc["runCommand.js"]
+    be["buildEnv.js"]
+    st["releaseStore, logStore, notify"]
+    aws["aws.js"]
+    fl["file.js"]
+  end
+  app --> val
+  app --> st
+  app --> act
+  app --> rb
+  rb --> act
+  rb --> ver
+  pl --> prep
+  pl --> bld
+  pl --> tst
+  pl --> dep
+  pl --> ver
+  pl --> act
+  pl --> sb
+  pl --> st
+  prep --> rc
+  prep --> fl
+  prep --> aws
+  bld --> pm
+  tst --> pm
+  dep --> fl
+  dep --> aws
+  sb --> rc
+  sb --> be

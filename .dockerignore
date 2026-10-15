@@ -1,0 +1,10 @@
+.env
+.env.*
+!.env.example
+.git
+.github
+.vscode
+.pnpm-store
+node_modules
+output
+*.log

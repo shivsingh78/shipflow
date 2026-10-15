@@ -1,0 +1,27 @@
+%% title: Diagram A — System context: who talks to what
+%% maxheight: 135
+flowchart TB
+  dev["Developer"]:::ext
+  gh["GitHub<br/>source repositories"]:::ext
+  subgraph SF["ShipFlow (self-hosted)"]
+    cli["shipflow CLI"]
+    api["Express API :8000"]
+    q["Redis + BullMQ<br/>job queue"]
+    w["Worker"]
+    pg[("PostgreSQL<br/>release state")]
+    site["Site server :8080"]
+  end
+  s3[("AWS S3<br/>immutable artifacts")]:::ext
+  visitor["Visitors<br/>(browser)"]:::ext
+  dev --> cli
+  cli -->|"HTTP + bearer token"| api
+  api --> pg
+  api --> q
+  q --> w
+  w -->|"git clone"| gh
+  w --> pg
+  w -->|"upload artifacts"| s3
+  site -->|"newest activation row"| pg
+  site -->|"stream files"| s3
+  visitor --> site
+  classDef ext fill:#eceff1,stroke:#607d8b,color:#263238;

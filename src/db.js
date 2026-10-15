@@ -1,7 +1,6 @@
-import  dotenv from 'dotenv';
 import pg from 'pg';
 
-dotenv.config();
+import './config.js';
 
 const {Pool}=pg;
 
@@ -11,4 +10,9 @@ export const pool = new Pool({
     user:process.env.DB_USER,
     password:process.env.DB_PASSWORD,
     database:process.env.DB_NAME,
+})
+
+// An idle client losing its connection must not crash the process.
+pool.on('error',(error)=>{
+    console.error('PostgreSQL pool error:',error.message);
 })

@@ -1,43 +1,51 @@
 import {
   PutObjectCommand,
-  CopyObjectCommand,
   ListObjectsV2Command,
-  DeleteObjectsCommand,
   GetObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
 import mime from "mime-types";
-import path from 'path'
-import fs from "fs";
-import dotenv from "dotenv";
+import path from "path";
+import fs from "fs/promises";
 
-dotenv.config();
-const bucketName = process.env.S3_BUCKET_NAME;
+import { config } from "./config.js";
 
+const bucketName = config.s3.bucket;
+
+// Without explicit keys the SDK falls back to its default credential chain
+// (e.g. an EC2 instance role), which is the preferred least-privilege setup.
 const s3 = new S3Client({
-  region: process.env.AWS_REGION,
-
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_KEY,
-  },
+  region: config.s3.region,
+  endpoint: config.s3.endpoint,
+  forcePathStyle: config.s3.forcePathStyle,
+  credentials:
+    config.s3.accessKeyId && config.s3.secretAccessKey
+      ? {
+          accessKeyId: config.s3.accessKeyId,
+          secretAccessKey: config.s3.secretAccessKey,
+        }
+      : undefined,
 });
+
+export function isNotFoundError(error) {
+  return (
+    error?.name === "NoSuchKey" ||
+    error?.name === "NotFound" ||
+    error?.$metadata?.httpStatusCode === 404
+  );
+}
 
 export const uploadFile = async (
   fileName,
   localFilePath
 ) => {
-  const fileContent = fs.readFileSync(localFilePath);
+  const fileContent = await fs.readFile(localFilePath);
 
   // Detect MIME type from the local file
   const contentType =
     mime.contentType(
       path.basename(localFilePath)
     ) || "application/octet-stream";
-
-  console.log(
-    `${fileName} -> ${contentType}`
-  );
 
   const command = new PutObjectCommand({
     Bucket: bucketName,
@@ -47,10 +55,6 @@ export const uploadFile = async (
   });
 
   await s3.send(command);
-
-  console.log(
-    `${fileName} uploaded successfully`
-  );
 };
 
 export const listS3Objects = async (prefix) => {
@@ -78,51 +82,6 @@ export const listS3Objects = async (prefix) => {
   return objects;
 };
 
-export const copyS3Object = async (
-  sourceKey,
-  destinationKey
-) => {
-  const command = new CopyObjectCommand({
-    Bucket: bucketName,
-    CopySource: `${bucketName}/${sourceKey}`,
-    Key: destinationKey,
-  });
-
-  await s3.send(command);
-
-  console.log(
-    `${sourceKey} copied to ${destinationKey}`
-  );
-};
-
-export const deleteS3Prefix = async (prefix) => {
-  const objects = await listS3Objects(prefix);
-
-  if (objects.length === 0) {
-    return;
-  }
-
-  const keys = objects
-    .filter((object) => object.Key)
-    .map((object) => ({
-      Key: object.Key,
-    }));
-
-  const command = new DeleteObjectsCommand({
-    Bucket: bucketName,
-    Delete: {
-      Objects: keys,
-      Quiet: true,
-    },
-  });
-
-  await s3.send(command);
-
-  console.log(
-    `${keys.length} objects deleted from ${prefix}`
-  );
-};
-
 export const getS3Object = async (key) => {
   const command = new GetObjectCommand({
     Bucket: bucketName,
@@ -131,9 +90,3 @@ export const getS3Object = async (key) => {
 
   return await s3.send(command);
 };
-
-
-
-
-
-

@@ -1,0 +1,11 @@
+{
+  "name": "shipflow-fixture-probe",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "node probe.js install",
+    "build": "node probe.js build && node build.js",
+    "test": "node probe.js test && node check.js"
+  }
+}

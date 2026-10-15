@@ -1,0 +1,14 @@
+{
+  "name": "shipflow-fixture-yarn",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@1.22.22",
+  "scripts": {
+    "build": "node build.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "escape-html": "1.0.3"
+  }
+}

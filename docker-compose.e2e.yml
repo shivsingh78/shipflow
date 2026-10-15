@@ -1,0 +1,79 @@
+# End-to-end test stack. Use through test/e2e/run.sh, which runs it as a
+# separate compose project ("shipflow-e2e") with its own volumes.
+# S3 is replaced by a local S3-compatible mock; repositories come from the
+# fixture git server. No host ports are published.
+
+x-e2e-environment: &e2e-environment
+  SHIPFLOW_INSTANCE: shipflow-e2e
+  SHIPFLOW_API_TOKEN: e2e-test-token-0123456789abcdef0123456789
+  SHIPFLOW_ALLOWED_REPO_PREFIXES: http://fixtures:9000/shipflow/
+  SHIPFLOW_MAX_QUEUED: "3"
+  PUBLIC_SITE_URL: http://api:8080/
+  S3_BUCKET_NAME: shipflow-e2e
+  S3_ENDPOINT: http://s3:9090
+  S3_FORCE_PATH_STYLE: "true"
+  AWS_REGION: us-east-1
+  AWS_ACCESS_KEY_ID: e2e-access-key
+  AWS_SECRET_ACCESS_KEY: e2e-secret-key
+  DB_USER: shipflow
+  DB_NAME: shipflow
+  DB_PASSWORD: ${DB_PASSWORD}
+
+services:
+
+  s3:
+    image: adobe/s3mock:latest
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: shipflow-e2e
+      initialBuckets: shipflow-e2e
+
+  fixtures:
+    # git http-backend lives in Alpine's git-daemon package; it is only
+    # needed by this test service, not by the ShipFlow image.
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM shipflow-app:latest
+        USER root
+        RUN apk add --no-cache git-daemon
+        USER node
+    image: shipflow-e2e-fixtures:latest
+    command: ["node", "test/e2e/fixtureServer.js"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # The e2e stack must never see real credentials from .env.
+  api:
+    env_file: !reset []
+    environment: *e2e-environment
+    ports: !reset []
+    depends_on:
+      s3:
+        condition: service_started
+
+  worker:
+    env_file: !reset []
+    environment: *e2e-environment
+    depends_on:
+      fixtures:
+        condition: service_healthy
+
+  e2e:
+    image: shipflow-app:latest
+    pull_policy: never
+    profiles: ["runner"]
+    command: ["node", "--test", "--test-concurrency=1", "test/e2e/e2e.test.js"]
+    environment:
+      SHIPFLOW_API_URL: http://api:8000
+      SHIPFLOW_SITE_URL: http://api:8080
+      SHIPFLOW_API_TOKEN: e2e-test-token-0123456789abcdef0123456789
+    depends_on:
+      api:
+        condition: service_healthy
+      worker:
+        condition: service_started
+      fixtures:
+        condition: service_healthy

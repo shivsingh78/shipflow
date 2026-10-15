@@ -1,193 +1,158 @@
 import fs from "fs/promises";
 import path from "path";
 
-import {
-  uploadFile,
-  listS3Objects,
-  copyS3Object,
-  deleteS3Prefix,
-} from "./aws.js";
+import { config } from "./config.js";
+import { getAllFiles, toObjectKey } from "./file.js";
+import { uploadFile, listS3Objects } from "./aws.js";
 
+// Checked in order; the first one the build produced is deployed.
+const OUTPUT_DIRECTORIES = ["dist", "build", "out"];
 
-async function directoryExists(directoryPath) {
-  try {
-    const stat = await fs.stat(directoryPath);
-    return stat.isDirectory();
-  } catch {
-    return false;
-  }
+export function artifactPrefix(releaseId) {
+  return `releases/${releaseId}/build`;
 }
 
-async function getBuildDirectory(workspacePath) {
-  const packageJsonPath = path.join(
-    workspacePath,
-    "package.json"
-  );
-
-  const packageJson = JSON.parse(
-    await fs.readFile(packageJsonPath, "utf-8")
-  );
-
-  const distPath = path.join(
-    workspacePath,
-    "dist"
-  );
-
-  if (
-    packageJson.scripts?.build?.includes("vite") &&
-    await directoryExists(distPath)
-  ) {
-    return distPath;
-  }
-
-  if (await directoryExists(distPath)) {
-    return distPath;
+/**
+ * Copy the build output out of the sandbox into `destination`.
+ */
+export async function collectBuildOutput({ sandbox, destination }) {
+  for (const directory of OUTPUT_DIRECTORIES) {
+    if (await sandbox.copyOut(directory, destination)) {
+      return directory;
+    }
   }
 
   throw new Error(
-    "Build output directory 'dist' not found"
+    `Build output not found: expected one of ${OUTPUT_DIRECTORIES.map(
+      (d) => `${d}/`
+    ).join(", ")}`
   );
 }
 
-async function getAllFiles(folderPath) {
-  const files = [];
+const EXTERNAL_REFERENCE = /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i;
 
-  const entries = await fs.readdir(
-    folderPath,
-    {
-      withFileTypes: true,
-    }
-  );
+/**
+ * Local asset references in index.html (src="/assets/app.js", href="style.css").
+ * Only paths that look like files are returned, so SPA routes are ignored.
+ */
+export function localAssetReferences(html) {
+  const references = new Set();
+  const pattern = /\b(?:src|href)\s*=\s*["']([^"']+)["']/gi;
 
-  for (const entry of entries) {
-    const fullPath = path.join(
-      folderPath,
-      entry.name
-    );
+  for (const match of html.matchAll(pattern)) {
+    const value = match[1].trim();
 
-    if (entry.isDirectory()) {
-      files.push(
-        ...(await getAllFiles(fullPath))
-      );
-    } else if (entry.isFile()) {
-      files.push(fullPath);
-    }
-  }
-
-  return files;
-}
-
-async function activateRelease(releaseId) {
-  const sourcePrefix =
-    `releases/${releaseId}/build/`;
-
-  console.log(
-    `Activating release ${releaseId}`
-  );
-
-  // Remove currently active deployment
-  await deleteS3Prefix("active/");
-
-  const objects =
-    await listS3Objects(sourcePrefix);
-
-  if (objects.length === 0) {
-    throw new Error(
-      `No build artifacts found at ${sourcePrefix}`
-    );
-  }
-
-  for (const object of objects) {
-    if (!object.Key) {
+    if (!value || EXTERNAL_REFERENCE.test(value)) {
       continue;
     }
 
-    const relativePath =
-      object.Key.substring(
-        sourcePrefix.length
-      );
+    const cleanPath = value.split(/[?#]/)[0].replace(/^\.?\//, "");
+    const lastSegment = cleanPath.split("/").pop() || "";
 
-    const destinationKey =
-      `active/${relativePath}`;
+    if (cleanPath && lastSegment.includes(".")) {
+      references.add(cleanPath);
+    }
+  }
 
-    await copyS3Object(
-      object.Key,
-      destinationKey
+  return [...references];
+}
+
+/**
+ * Validate the build output before anything is uploaded or activated.
+ */
+export async function validateArtifact(artifactDirectory) {
+  const skipped = [];
+  const files = await getAllFiles(artifactDirectory, { skipped });
+
+  if (files.length === 0) {
+    throw new Error("Build output directory is empty");
+  }
+
+  if (files.length > config.maxArtifactFiles) {
+    throw new Error(
+      `Build output has ${files.length} files; the limit is ${config.maxArtifactFiles}`
     );
   }
 
-  console.log(
-    `Release ${releaseId} is now active`
-  );
-}
+  let totalBytes = 0;
 
-export async function deployRelease({
-  releaseId,
-  workspacePath,
-}) {
-  console.log(
-    `Deploying release ${releaseId}`
-  );
+  for (const file of files) {
+    totalBytes += (await fs.stat(file)).size;
+  }
 
-  console.log(
-    `Workspace: ${workspacePath}`
-  );
-
-  const buildDirectory =
-    await getBuildDirectory(
-      workspacePath
+  if (totalBytes > config.maxArtifactBytes) {
+    throw new Error(
+      `Build output is ${totalBytes} bytes; the limit is ${config.maxArtifactBytes}`
     );
+  }
 
-  console.log(
-    `Build directory: ${buildDirectory}`
+  const indexPath = path.join(artifactDirectory, "index.html");
+
+  if (!files.includes(indexPath)) {
+    throw new Error("Build output has no index.html at its root");
+  }
+
+  const relativeFiles = new Set(
+    files.map((file) =>
+      path.relative(artifactDirectory, file).split(path.sep).join("/")
+    )
   );
 
-  const files = await getAllFiles(
-    buildDirectory
+  const html = await fs.readFile(indexPath, "utf-8");
+  const missing = localAssetReferences(html).filter(
+    (reference) => !relativeFiles.has(reference)
   );
 
-  console.log(
-    `Found ${files.length} build files`
-  );
-
-  // Store immutable release artifact
-for (const file of files) {
-  const relativePath = path.relative(
-    buildDirectory,
-    file
-  );
-
-  const key =
-    `releases/${releaseId}/build/${relativePath}`;
-
-  await uploadFile(
-    key,
-    file
-  );
-}
-
-  console.log(
-    `Release artifact stored for ${releaseId}`
-  );
-
-  // Make this release active
-  await activateRelease(releaseId);
-
-  const deploymentUrl =
-    process.env.INTERNAL_DEPLOYMENT_URL ||
-    "http://api:8000/active/";
-
-    const publicDeploymentUrl =
-  process.env.PUBLIC_DEPLOYMENT_URL ||
-  "http://localhost:8000/active/";
+  if (missing.length > 0) {
+    throw new Error(
+      `index.html references files missing from the build: ${missing
+        .slice(0, 10)
+        .join(", ")}`
+    );
+  }
 
   return {
-    releaseId,
-    buildDirectory,
-    fileCount: files.length,
-    deploymentPath:
-      `releases/${releaseId}/build`,
-    deploymentUrl,
-     publicDeploymentUrl,
+    files,
+    totalBytes,
+    skippedSymlinks: skipped.length,
+  };
+}
+
+/**
+ * Upload the artifact to its immutable, release-specific location and
+ * confirm every file landed with the expected size.
+ * This never touches the active deployment.
+ */
+export async function uploadArtifact({
+  releaseId,
+  artifactDirectory,
+  files,
+}) {
+  const prefix = artifactPrefix(releaseId);
+  const expected = new Map();
+
+  for (const file of files) {
+    const key = toObjectKey(prefix, artifactDirectory, file);
+
+    await uploadFile(key, file);
+    expected.set(key, (await fs.stat(file)).size);
+  }
+
+  const uploaded = new Map(
+    (await listS3Objects(`${prefix}/`)).map((object) => [
+      object.Key,
+      object.Size,
+    ])
+  );
+
+  for (const [key, size] of expected) {
+    if (uploaded.get(key) !== size) {
+      throw new Error(`Uploaded artifact is incomplete: ${key}`);
+    }
+  }
+
+  return {
+    artifactPath: prefix,
+    fileCount: expected.size,
   };
 }

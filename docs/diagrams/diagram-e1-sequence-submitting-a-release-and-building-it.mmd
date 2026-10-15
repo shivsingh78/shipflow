@@ -1,0 +1,35 @@
+%% title: Diagram E1 — Sequence: submitting a release and building it
+sequenceDiagram
+  autonumber
+  actor Dev as Developer
+  participant CLI as shipflow CLI
+  participant API as API
+  participant PG as PostgreSQL
+  participant Q as Redis / BullMQ
+  participant W as Worker
+  participant SB as Docker sandbox
+  participant S3 as S3
+  Dev->>CLI: shipflow deploy repoUrl
+  CLI->>API: POST /deploy + bearer token
+  API->>API: check token, URL allowlist, queue limit
+  API->>PG: INSERT releases (QUEUED)
+  API->>Q: queue.add (jobId = releaseId)
+  API-->>CLI: 202 Accepted
+  Q->>W: job {releaseId, repoUrl}
+  W->>PG: RUNNING, stage PREPARE
+  W->>W: git clone --depth 1 (bare env, timeout)
+  W->>S3: upload source snapshot
+  W->>PG: stage BUILD
+  W->>SB: create, copy source in, start
+  W->>SB: install dependencies (network ON)
+  W->>SB: network disconnect
+  W->>SB: run build script (network OFF)
+  W->>PG: stage TEST
+  W->>SB: run test script (network OFF)
+  loop until SUCCESS or FAILED
+    CLI->>API: GET /releases/{id} every 2 s
+  end
+  alt build or test fails
+    W->>PG: FAILED, ERROR logs, RELEASE_FAILED
+    Note over W,PG: previous release stays live
+  end

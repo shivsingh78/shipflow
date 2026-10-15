@@ -1,0 +1,37 @@
+%% title: Diagram C — Docker deployment, trust boundaries and network paths
+%% layout: landscape
+flowchart LR
+  subgraph TRUST["TRUSTED: ShipFlow containers on the Compose network"]
+    api["api container<br/>user node, no docker.sock<br/>holds .env secrets"]
+    worker["worker container<br/>user root + docker.sock<br/>holds .env secrets"]
+    pg[("postgres<br/>no published port")]
+    redis[("redis<br/>no published port")]
+  end
+  daemon["Docker daemon<br/>root-equivalent<br/>control of the host"]
+  subgraph SBX["UNTRUSTED: sandbox container"]
+    code["repository code<br/>install, build, test<br/>uid 1000, no capabilities, limits<br/>NO secrets, mounts or socket"]
+  end
+  subgraph OUT["Outside the sandbox"]
+    gh["GitHub"]
+    s3[("AWS S3<br/>private bucket")]
+    npm["npm registry<br/>Corepack downloads"]
+    hostports["Host ports published<br/>on 0.0.0.0<br/>(verified gap)"]
+  end
+  worker ==>|"docker.sock"| daemon
+  daemon ==>|"creates sibling container"| code
+  worker -->|"git clone"| gh
+  worker --> s3
+  api --> s3
+  api --> pg
+  worker --> pg
+  worker --> redis
+  api --> redis
+  code -->|"install phase only"| npm
+  code -.->|"install phase: bridge gateway IP"| hostports
+  code -.->|"network removed before build and test"| nonet(("no network"))
+  classDef trusted fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
+  classDef untrusted fill:#ffebee,stroke:#c62828,color:#b71c1c;
+  classDef risk fill:#fff3e0,stroke:#ef6c00,color:#e65100;
+  class api,worker,pg,redis trusted;
+  class code untrusted;
+  class daemon,hostports risk;

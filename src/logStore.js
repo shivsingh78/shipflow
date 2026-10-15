@@ -1,11 +1,15 @@
 import {pool} from './db.js';
 
+// Keep individual log rows bounded; build output is already tail-truncated.
+const MAX_MESSAGE_LENGTH = 16 * 1024;
+
 export async function logRelease({
     releaseId,
     stage,
     level='INFO',
     message,
 }){
+    const text = String(message);
     const result = await pool.query(
         `
         INSERT INTO release_logs
@@ -18,7 +22,9 @@ export async function logRelease({
             releaseId,
             stage,
             level,
-            message,
+            text.length > MAX_MESSAGE_LENGTH
+                ? `[truncated]\n${text.slice(-MAX_MESSAGE_LENGTH)}`
+                : text,
         ]
     );
     return result.rows[0];

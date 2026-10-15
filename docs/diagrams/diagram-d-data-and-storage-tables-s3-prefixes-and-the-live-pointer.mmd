@@ -1,0 +1,21 @@
+%% title: Diagram D — Data and storage: tables, S3 prefixes and the live pointer
+%% maxheight: 110
+flowchart LR
+  subgraph PG["PostgreSQL"]
+    R["releases<br/>release_id UNIQUE<br/>status, current_stage<br/>artifact_path, commit_sha, test_status"]
+    L["release_logs<br/>release_id, stage, level, message"]
+    N["notifications<br/>release_id, type, message"]
+    A["activations (append-only)<br/>release_id FK, previous_release_id, action"]
+  end
+  subgraph S3["S3 bucket (private)"]
+    SRC["releases/{id}/source/...<br/>source snapshot"]
+    BLD["releases/{id}/build/...<br/>index.html, assets/*"]
+  end
+  R -->|"artifact_path"| BLD
+  A -->|"newest row = live release"| R
+  L -.->|"release_id, no FK"| R
+  N -.->|"release_id, no FK"| R
+  SITE["site server :8080"]
+  SITE -->|"1. newest activation"| A
+  SITE -->|"2. artifact_path"| R
+  SITE -->|"3. GET artifact_path/file"| BLD

@@ -1,0 +1,224 @@
+/* Print stylesheet for the ShipFlow technical documentation (A4). */
+
+@page { size: A4; margin: 22mm 16mm 18mm 16mm; }
+@page :first { margin: 0; }
+@page landscape { size: A4 landscape; margin: 20mm 14mm 16mm 14mm; }
+
+:root {
+  --ink: #1f2933;
+  --muted: #607d8b;
+  --navy: #0d2a4a;
+  --blue: #1565c0;
+  --line: #cfd8dc;
+  --wash: #f4f8fb;
+  --warn: #ef6c00;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+body {
+  font-family: Lato, "DejaVu Sans", "Ubuntu Sans", sans-serif;
+  font-size: 9.3pt;
+  line-height: 1.48;
+  color: var(--ink);
+  margin: 0;
+}
+
+code, pre, kbd {
+  font-family: "DejaVu Sans Mono", "Ubuntu Mono", monospace;
+}
+
+/* ------------------------------------------------------------------ cover */
+
+.cover {
+  height: 297mm;
+  width: 210mm;
+  break-after: page;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}
+.cover-band {
+  background: linear-gradient(135deg, #0d2a4a 0%, #1565c0 100%);
+  color: #fff;
+  padding: 62mm 22mm 24mm 22mm;
+  border-bottom: 5mm solid #ff9800;
+}
+.cover .eyebrow {
+  font-size: 9.5pt;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.85;
+  margin-bottom: 8mm;
+}
+.cover h1 {
+  font-size: 56pt;
+  line-height: 1;
+  margin: 0 0 6mm 0;
+  letter-spacing: -0.02em;
+  border: 0;
+  padding: 0;
+  color: #fff;
+}
+.cover .subtitle { font-size: 16pt; font-style: italic; margin: 0; opacity: 0.95; }
+.cover-body { padding: 18mm 22mm; }
+.cover .lead { font-size: 12pt; line-height: 1.55; color: #37474f; margin: 0 0 12mm 0; }
+.cover table.meta { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
+.cover table.meta th {
+  text-align: left; width: 34mm; vertical-align: top; color: var(--muted);
+  font-weight: 700; padding: 3mm 3mm 3mm 0; background: none;
+  border: 0; border-top: 0.5pt solid var(--line);
+}
+.cover table.meta td { padding: 3mm 0; border: 0; border-top: 0.5pt solid var(--line); background: none !important; }
+
+/* -------------------------------------------------------------------- toc */
+
+.toc { break-after: page; padding-top: 2mm; }
+.toc-title {
+  break-before: auto !important;
+  margin-top: 0 !important;
+}
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 0; }
+.toc a { display: flex; align-items: baseline; color: inherit; text-decoration: none; }
+.toc .dots { flex: 1; border-bottom: 1pt dotted #b0bec5; margin: 0 2mm; transform: translateY(-1.2mm); }
+.toc .p { color: var(--muted); font-variant-numeric: tabular-nums; }
+.toc .toc-2 { margin-top: 2.2mm; font-weight: 700; font-size: 10pt; color: var(--navy); }
+.toc .toc-3 { padding-left: 7mm; font-size: 8.6pt; color: #455a64; line-height: 1.45; }
+
+/* --------------------------------------------------------------- headings */
+
+h2, h3, h4 { color: var(--navy); line-height: 1.25; }
+
+h2 {
+  font-size: 19pt;
+  margin: 11mm 0 5mm 0;
+  padding-bottom: 2.5mm;
+  border-bottom: 2.5pt solid var(--blue);
+  break-after: avoid;
+}
+main > h2:first-of-type { margin-top: 0; }
+main > h2.chapter-break { break-before: page; margin-top: 0; }
+
+h3 {
+  font-size: 12.5pt;
+  margin: 7mm 0 2.5mm 0;
+  padding-left: 3mm;
+  border-left: 3pt solid #90caf9;
+  break-after: avoid;
+}
+h4 { font-size: 10.5pt; margin: 5mm 0 1.5mm 0; break-after: avoid; }
+
+p { margin: 0 0 3mm 0; orphans: 3; widows: 3; }
+
+ul, ol { margin: 0 0 3mm 0; padding-left: 6mm; }
+li { margin-bottom: 1.2mm; }
+
+a { color: var(--blue); text-decoration: none; }
+
+strong { color: #102a43; }
+
+/* ------------------------------------------------------------------- code */
+
+code {
+  background: #eceff1;
+  border-radius: 2pt;
+  padding: 0.3pt 2pt;
+  font-size: 0.88em;
+  color: #263238;
+  overflow-wrap: anywhere;
+}
+
+pre {
+  background: #0f1c2e;
+  color: #e3eaf3;
+  border-radius: 4pt;
+  padding: 3mm 4mm;
+  font-size: 8.2pt;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  break-inside: avoid;
+  margin: 0 0 4mm 0;
+}
+pre code { background: none; color: inherit; padding: 0; font-size: inherit; }
+
+/* ----------------------------------------------------------------- tables */
+
+.table-wrap { margin: 0 0 4.5mm 0; }
+
+table { width: 100%; border-collapse: collapse; font-size: 8pt; line-height: 1.36; }
+thead { display: table-header-group; }
+th {
+  background: var(--navy);
+  color: #fff;
+  text-align: left;
+  font-weight: 700;
+  padding: 1.8mm 2mm;
+  border: 0.5pt solid var(--navy);
+}
+td {
+  padding: 1.6mm 2mm;
+  border: 0.5pt solid var(--line);
+  vertical-align: top;
+  overflow-wrap: break-word;
+}
+th:first-child, td:first-child { min-width: 17mm; }
+tr { break-inside: avoid; }
+tbody tr:nth-child(even) td { background: var(--wash); }
+td code, th code { font-size: 0.9em; }
+th code { background: rgba(255,255,255,0.18); color: #fff; }
+
+/* -------------------------------------------------------------- callouts */
+
+blockquote {
+  margin: 0 0 4.5mm 0;
+  padding: 3mm 4mm;
+  background: #fff8e1;
+  border-left: 3.5pt solid #f9a825;
+  border-radius: 0 3pt 3pt 0;
+  font-size: 9pt;
+  break-inside: avoid;
+}
+blockquote p:last-child { margin-bottom: 0; }
+
+/* -------------------------------------------------------------- diagrams */
+
+figure.diagram {
+  margin: 3mm 0 4.5mm 0;
+  padding: 3mm 2mm 2mm 2mm;
+  border: 0.75pt solid var(--line);
+  border-radius: 4pt;
+  background: #fff;
+  break-inside: avoid;
+  text-align: center;
+}
+figure.diagram pre.mermaid {
+  background: none;
+  color: inherit;
+  padding: 0;
+  margin: 0;
+  white-space: normal;
+  display: flex;
+  justify-content: center;
+}
+figure.diagram svg { width: 100% !important; max-width: none !important; height: auto; max-height: var(--maxh, 205mm); }
+figcaption {
+  margin-top: 2mm;
+  font-size: 8.3pt;
+  font-weight: 700;
+  color: var(--muted);
+  border-top: 0.5pt solid #eceff1;
+  padding-top: 1.6mm;
+}
+
+hr { border: 0; border-top: 0.5pt solid var(--line); margin: 5mm 0; }
+
+/* ------------------------------------------------ landscape diagram pages */
+
+.landscape-section { page: landscape; break-before: page; break-after: page; }
+.landscape-section h3 { margin-top: 0; }
+.landscape-section figure.diagram { margin-bottom: 3mm; }
+.landscape-section figure.diagram svg { max-height: 118mm; }

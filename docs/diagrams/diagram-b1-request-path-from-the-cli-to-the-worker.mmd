@@ -1,0 +1,11 @@
+%% title: Diagram B1 — Request path: from the CLI to the worker
+%% maxheight: 125
+flowchart TB
+  dev["Developer"] --> cli["shipflow CLI"]
+  cli -->|"POST /deploy<br/>bearer token"| api["Express API"]
+  api -->|"release row<br/>QUEUED"| pg[("PostgreSQL")]
+  api -->|"queue.add"| redis[("Redis / BullMQ")]
+  redis -->|"job"| worker["Worker<br/>runPipeline"]
+  worker -->|"status, stages,<br/>logs"| pg
+  cli -.->|"GET /releases/{id}<br/>poll every 2 s"| api
+  cli -.->|"POST /rollback/{id}"| api

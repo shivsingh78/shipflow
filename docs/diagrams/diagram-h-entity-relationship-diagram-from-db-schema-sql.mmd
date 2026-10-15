@@ -1,0 +1,43 @@
+%% title: Diagram H — Entity-relationship diagram (from db/schema.sql)
+%% maxheight: 150
+erDiagram
+  releases ||--o{ activations : "FK release_id"
+  releases ||..o{ release_logs : "release_id, NOT a FK"
+  releases ||..o{ notifications : "release_id, NOT a FK"
+  releases {
+    int id PK
+    string release_id UK
+    text repo_url
+    string status
+    string current_stage
+    text error_message
+    text deployment_url
+    text artifact_path
+    text public_deployment_url
+    string commit_sha
+    string test_status
+    timestamp created_at
+    timestamp updated_at
+  }
+  release_logs {
+    int id PK
+    string release_id
+    string stage
+    string level
+    text message
+    timestamp created_at
+  }
+  notifications {
+    int id PK
+    string release_id
+    string type
+    text message
+    timestamp created_at
+  }
+  activations {
+    int id PK
+    string release_id FK
+    string previous_release_id
+    string action
+    timestamp created_at
+  }

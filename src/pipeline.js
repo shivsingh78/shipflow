@@ -1,204 +1,211 @@
+import fs from "fs/promises";
+import path from "path";
+
+import { config } from "./config.js";
 import { prepareRelease } from "./prepare.js";
 import { buildRelease } from "./build.js";
 import { testRelease } from "./test.js";
-import { deployRelease } from "./deploy.js";
-import { verifyRelease } from "./verify.js";
+import {
+  collectBuildOutput,
+  validateArtifact,
+  uploadArtifact,
+} from "./deploy.js";
+import { verifyCandidate, verifyActive } from "./verify.js";
+import { activateRelease, revertActivation } from "./activation.js";
+import { createSandbox } from "./sandbox.js";
 import { notifyRelease } from "./notify.js";
 import { logRelease } from "./logStore.js";
+import { redactSecrets } from "./runCommand.js";
 
 import {
   getRelease,
   updateRelease,
 } from "./releaseStore.js";
 
+const OUTPUT_TAIL_ON_FAILURE = 12_000;
+
+/**
+ * Prepare → Build → Test → Deploy (immutable upload) → Verify (candidate)
+ * → Activate (switch live pointer, verify live site).
+ *
+ * The live site only changes in ACTIVATE, after every earlier stage passed,
+ * so a failed candidate never replaces the current deployment.
+ */
 export async function runPipeline({
   releaseId,
   repoUrl,
 }) {
   let currentStage = "RELEASE";
+  let sandbox = null;
+  const releaseRoot = path.join(config.workspaceRoot, releaseId);
+
+  // A failure to write a log line must never hide the real error.
+  const log = async (stage, message, level = "INFO") => {
+    const text = redactSecrets(message);
+
+    console.log(`[${releaseId}] [${stage}] [${level}] ${text}`);
+
+    try {
+      await logRelease({ releaseId, stage, level, message: text });
+    } catch (error) {
+      console.error(`Failed to persist log for ${releaseId}:`, error.message);
+    }
+  };
+
+  const stageLog = (stage) => (message, level) =>
+    log(stage, message, level);
+
+  const enterStage = async (stage) => {
+    currentStage = stage;
+    await updateRelease(releaseId, {
+      status: "RUNNING",
+      currentStage,
+    });
+    await log(stage, `${stage} stage started`);
+  };
 
   try {
-    const release = await getRelease(
-      releaseId
-    );
+    const release = await getRelease(releaseId);
 
     if (!release) {
-      throw new Error(
-        `Release ${releaseId} not found`
-      );
+      throw new Error(`Release ${releaseId} not found`);
     }
 
     // -----------------------
     // PREPARE
     // -----------------------
 
-    currentStage = "PREPARE";
-    await logRelease({
-  releaseId,
-  stage: "PREPARE",
-  level: "INFO",
-  message: "Prepare stage started",
-});
+    await enterStage("PREPARE");
 
-    await updateRelease(releaseId, {
-      status: "RUNNING",
-      currentStage,
-      errorMessage: null,
+    const prepared = await prepareRelease({
+      releaseId,
+      repoUrl,
+      log: stageLog("PREPARE"),
     });
 
-    const prepared =
-      await prepareRelease({
-        releaseId,
-        repoUrl,
-      });
-
-      await logRelease({
-  releaseId,
-  stage: "PREPARE",
-  level: "INFO",
-  message: "Repository prepared successfully",
-});
+    await updateRelease(releaseId, { commitSha: prepared.commitSha });
+    await log("PREPARE", "Repository prepared successfully");
 
     // -----------------------
     // BUILD
     // -----------------------
 
-    currentStage = "BUILD";
+    await enterStage("BUILD");
 
-    await logRelease({
-  releaseId,
-  stage: "BUILD",
-  level: "INFO",
-  message: "Build stage started",
-});
-
-    await updateRelease(releaseId, {
-      status: "RUNNING",
-      currentStage,
-      errorMessage: null,
+    sandbox = await createSandbox({
+      releaseId,
+      workspacePath: prepared.workspacePath,
     });
 
-    const built =
-      await buildRelease({
-        releaseId,
-        workspacePath:
-          prepared.workspacePath,
-      });
+    const built = await buildRelease({
+      releaseId,
+      workspacePath: prepared.workspacePath,
+      sandbox,
+      log: stageLog("BUILD"),
+    });
 
-      await logRelease({
-  releaseId,
-  stage: "BUILD",
-  level: "INFO",
-  message: "Build completed successfully",
-});
+    await log("BUILD", "Build completed successfully");
 
     // -----------------------
     // TEST
     // -----------------------
 
-    currentStage = "TEST";
+    await enterStage("TEST");
 
-    await logRelease({
-  releaseId,
-  stage: "TEST",
-  level: "INFO",
-  message: "Test stage started",
-});
-
-    await updateRelease(releaseId, {
-      status: "RUNNING",
-      currentStage,
-      errorMessage: null,
+    const tested = await testRelease({
+      releaseId,
+      workspacePath: prepared.workspacePath,
+      sandbox,
+      packageJson: built.packageJson,
+      packageManager: built.packageManager,
+      log: stageLog("TEST"),
     });
 
-    const tested =
-      await testRelease({
-        releaseId,
-        workspacePath:
-          built.workspacePath,
-      });
-
-      await logRelease({
-  releaseId,
-  stage: "TEST",
-  level: "INFO",
-  message: "Test completed successfully",
-});
+    await updateRelease(releaseId, { testStatus: tested.testStatus });
+    await log("TEST", `Test stage finished: ${tested.testStatus}`);
 
     // -----------------------
-    // DEPLOY
+    // DEPLOY: upload an immutable artifact; the live site is untouched.
     // -----------------------
 
-    currentStage = "DEPLOY";
+    await enterStage("DEPLOY");
 
-    await logRelease({
-  releaseId,
-  stage: "DEPLOY",
-  level: "INFO",
-  message: "DEPLOY stage started",
-});
-
-    await updateRelease(releaseId, {
-      status: "RUNNING",
-      currentStage,
-      errorMessage: null,
+    const artifactDirectory = path.join(releaseRoot, "artifact");
+    const outputDirectory = await collectBuildOutput({
+      sandbox,
+      destination: artifactDirectory,
     });
 
-    const deployed =
-      await deployRelease({
-        releaseId,
-        workspacePath:
-          tested.workspacePath,
-      });
+    await sandbox.destroy();
+    sandbox = null;
 
-   await updateRelease(releaseId, {
-  status: "RUNNING",
-  currentStage: "DEPLOY",
-  deploymentUrl: deployed.deploymentUrl,
-  publicDeploymentUrl:
-    deployed.publicDeploymentUrl,
-  artifactPath: deployed.deploymentPath,
-  errorMessage: null,
-});
+    const artifact = await validateArtifact(artifactDirectory);
 
- await logRelease({
-  releaseId,
-  stage: "DEPLOY",
-  level: "INFO",
-  message: "DEPLOY completed successfully",
-});
-    // -----------------------
-    // VERIFY
-    // -----------------------
+    await log(
+      "DEPLOY",
+      `Validated ${outputDirectory}/: ${artifact.files.length} files, ${artifact.totalBytes} bytes` +
+        (artifact.skippedSymlinks
+          ? `, ${artifact.skippedSymlinks} symlinks skipped`
+          : "")
+    );
 
-    currentStage = "VERIFY";
-
-    await logRelease({
-  releaseId,
-  stage: "VERIFY",
-  level: "INFO",
-  message: "VERIFY stage started",
-});
-
-    await updateRelease(releaseId, {
-      status: "RUNNING",
-      currentStage,
-      errorMessage: null,
+    const uploaded = await uploadArtifact({
+      releaseId,
+      artifactDirectory,
+      files: artifact.files,
     });
 
-    const verified =
-      await verifyRelease({
-        releaseId,
-        deploymentUrl:
-          deployed.deploymentUrl,
-      });
+    await updateRelease(releaseId, {
+      artifactPath: uploaded.artifactPath,
+      deploymentUrl: `/preview/${releaseId}/`,
+    });
 
-    await logRelease({
-    releaseId,
-    stage: "VERIFY",
-    level: "INFO",
-    message: "VERIFY completed successfully",
-   });
+    await log(
+      "DEPLOY",
+      `Uploaded ${uploaded.fileCount} files to ${uploaded.artifactPath}`
+    );
+
+    // -----------------------
+    // VERIFY: HTTP check of the candidate before it goes live.
+    // -----------------------
+
+    await enterStage("VERIFY");
+
+    const candidate = await verifyCandidate({ releaseId });
+
+    await log(
+      "VERIFY",
+      `Candidate served HTTP ${candidate.statusCode} (${candidate.contentType})`
+    );
+
+    // -----------------------
+    // ACTIVATE: switch the live pointer, then check the live site.
+    // -----------------------
+
+    await enterStage("ACTIVATE");
+
+    const activation = await activateRelease({
+      releaseId,
+      action: "DEPLOY",
+    });
+
+    try {
+      const live = await verifyActive({ releaseId });
+
+      await log(
+        "ACTIVATE",
+        `Live site serves ${releaseId}: HTTP ${live.statusCode} (${live.contentType})`
+      );
+    } catch (error) {
+      const reverted = await revertActivation(activation);
+
+      throw new Error(
+        `Live check failed after activation (${error.message}); ` +
+          (reverted
+            ? `restored previous release ${activation.previousReleaseId ?? "(none)"}`
+            : "a newer activation has since replaced it")
+      );
+    }
 
     // -----------------------
     // SUCCESS
@@ -206,61 +213,79 @@ export async function runPipeline({
 
     await updateRelease(releaseId, {
       status: "SUCCESS",
-      currentStage: "VERIFY",
-      errorMessage: null,
+      currentStage: "ACTIVATE",
+      publicDeploymentUrl: config.publicSiteUrl,
     });
 
-    await notifyRelease({
-      releaseId,
-      type: "RELEASE_SUCCESS",
-      message:
-        `Release ${releaseId} successfully deployed and verified.`,
-    });
+    try {
+      await notifyRelease({
+        releaseId,
+        type: "RELEASE_SUCCESS",
+        message: `Release ${releaseId} deployed and verified (tests: ${tested.testStatus}).`,
+      });
+    } catch (notifyError) {
+      console.error("Failed to create success notification:", notifyError.message);
+    }
 
     return {
       success: true,
       releaseId,
-      deploymentUrl:
-        deployed.deploymentUrl,
-      verified,
+      previousReleaseId: activation.previousReleaseId,
     };
 
   } catch (error) {
+    const errorMessage = redactSecrets(error.message);
 
-    await logRelease({
-  releaseId,
-  stage: currentStage,
-  level: "ERROR",
-  message: error.message,
-});
+    if (error.result?.output) {
+      await log(
+        currentStage,
+        `Command output (last ${OUTPUT_TAIL_ON_FAILURE} chars):\n${error.result.output.slice(
+          -OUTPUT_TAIL_ON_FAILURE
+        )}`,
+        "ERROR"
+      );
+    }
 
-    console.error(
-      `${currentStage} failed for ${releaseId}`,
-      error
-    );
+    await log(currentStage, errorMessage, "ERROR");
 
-    await updateRelease(releaseId, {
-      status: "FAILED",
-      currentStage,
-      errorMessage: error.message,
-    });
+    console.error(`${currentStage} failed for ${releaseId}`);
+
+    try {
+      await updateRelease(releaseId, {
+        status: "FAILED",
+        currentStage,
+        errorMessage,
+      });
+    } catch (updateError) {
+      console.error("Failed to mark release as failed:", updateError.message);
+    }
 
     try {
       await notifyRelease({
         releaseId,
         type: "RELEASE_FAILED",
         message:
-          `Release ${releaseId} failed during ${currentStage}: ${error.message}`,
+          `Release ${releaseId} failed during ${currentStage}: ${errorMessage}`,
       });
     } catch (notifyError) {
       console.error(
         "Failed to create failure notification:",
-        notifyError
+        notifyError.message
       );
     }
 
     throw error;
-  }
+  } finally {
+    if (sandbox) {
+      await sandbox.destroy().catch((error) =>
+        console.error("Failed to remove sandbox:", error.message)
+      );
+    }
 
-  
+    await fs
+      .rm(releaseRoot, { recursive: true, force: true })
+      .catch((error) =>
+        console.error("Failed to clean workspace:", error.message)
+      );
+  }
 }

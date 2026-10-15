@@ -1,155 +1,58 @@
-import fs from "fs/promises";
-import path from "path";
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { config } from "./config.js";
+import {
+  classifyTestScript,
+  runScriptCommand,
+} from "./packageManager.js";
 
-const execFileAsync = promisify(execFile);
-
-async function fileExists(filePath) {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readPackageJson(projectPath) {
-  const packageJsonPath = path.join(
-    projectPath,
-    "package.json"
-  );
-
-  const content = await fs.readFile(
-    packageJsonPath,
-    "utf-8"
-  );
-
-  return JSON.parse(content);
-}
-
-async function detectPackageManager(projectPath, packageJson) {
-  // 1. Explicit packageManager field
-  if (packageJson.packageManager) {
-    if (packageJson.packageManager.startsWith("pnpm@")) {
-      return "pnpm";
-    }
-
-    if (packageJson.packageManager.startsWith("npm@")) {
-      return "npm";
-    }
-
-    if (packageJson.packageManager.startsWith("yarn@")) {
-      return "yarn";
-    }
-  }
-
-  // 2. Lockfile detection
-  if (
-    await fileExists(
-      path.join(projectPath, "pnpm-lock.yaml")
-    )
-  ) {
-    return "pnpm";
-  }
-
-  if (
-    await fileExists(
-      path.join(projectPath, "package-lock.json")
-    )
-  ) {
-    return "npm";
-  }
-
-  if (
-    await fileExists(
-      path.join(projectPath, "yarn.lock")
-    )
-  ) {
-    return "yarn";
-  }
-
-  throw new Error(
-    "Unable to detect package manager"
-  );
-}
-
+/**
+ * Run the repository's test script in the sandbox.
+ *
+ * Returns testStatus "PASSED" when tests actually ran and passed, or
+ * "SKIPPED" when there is no real test script (only allowed when
+ * SHIPFLOW_REQUIRE_TESTS is not "true"). Failing tests throw.
+ */
 export async function testRelease({
   releaseId,
   workspacePath,
+  sandbox,
+  packageJson,
+  packageManager,
+  log = async () => {},
 }) {
-  console.log(`Testing release ${releaseId}`);
-  console.log(`Workspace: ${workspacePath}`);
+  const kind = classifyTestScript(packageJson);
 
-  const packageJson =
-    await readPackageJson(workspacePath);
+  if (kind !== "PRESENT") {
+    const reason =
+      kind === "MISSING"
+        ? 'no "test" script in package.json'
+        : 'the "test" script is the npm placeholder';
 
-  const testScript = packageJson.scripts?.test;
+    if (config.requireTests) {
+      throw new Error(`Tests are required but ${reason}`);
+    }
 
-  if (!testScript) {
-    throw new Error(
-      "No test script found in package.json"
-    );
-  }
+    await log(`Tests SKIPPED: ${reason}`, "WARN");
 
-  const packageManager =
-    await detectPackageManager(
+    return {
+      releaseId,
       workspacePath,
-      packageJson
-    );
-
-  console.log(
-    `Package manager: ${packageManager}`
-  );
-
-  console.log(
-    `Test script: ${testScript}`
-  );
-
-  const env = {
-    ...process.env,
-    CI: "true",
-  };
-
-  if (packageManager === "pnpm") {
-    await execFileAsync(
-      "pnpm",
-      ["test"],
-      {
-        cwd: workspacePath,
-        env,
-      }
-    );
+      testStatus: "SKIPPED",
+    };
   }
 
-  if (packageManager === "npm") {
-    await execFileAsync(
-      "npm",
-      ["test"],
-      {
-        cwd: workspacePath,
-        env,
-      }
-    );
-  }
+  await log(`Test script: ${packageJson.scripts.test}`);
 
-  if (packageManager === "yarn") {
-    await execFileAsync(
-      "yarn",
-      ["test"],
-      {
-        cwd: workspacePath,
-        env,
-      }
-    );
-  }
-
-  console.log(
-    `Tests completed for ${releaseId}`
+  const result = await sandbox.exec(
+    "Tests",
+    runScriptCommand(packageManager, "test"),
+    { timeoutMs: config.testTimeoutMs }
   );
+
+  await log(`Test output:\n${result.output}`);
 
   return {
     releaseId,
     workspacePath,
+    testStatus: "PASSED",
   };
 }

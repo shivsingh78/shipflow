@@ -1,184 +1,67 @@
-import fs from "fs/promises";
-import path from "path";
-import { execFile } from "child_process";
-import { promisify } from "util";
+import { config } from "./config.js";
+import {
+  readPackageJson,
+  detectPackageManager,
+  installCommand,
+  runScriptCommand,
+} from "./packageManager.js";
 
-const execFileAsync = promisify(execFile);
-
-async function fileExists(filePath) {
-  try {
-    await fs.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function readPackageJson(projectPath) {
-  const packageJsonPath = path.join(
-    projectPath,
-    "package.json"
-  );
-
-  const content = await fs.readFile(
-    packageJsonPath,
-    "utf-8"
-  );
-
-  return JSON.parse(content);
-}
-
-async function detectPackageManager(projectPath, packageJson) {
-  // 1. Explicit packageManager field
-  if (packageJson.packageManager) {
-    if (packageJson.packageManager.startsWith("pnpm@")) {
-      return "pnpm";
-    }
-
-    if (packageJson.packageManager.startsWith("npm@")) {
-      return "npm";
-    }
-
-    if (packageJson.packageManager.startsWith("yarn@")) {
-      return "yarn";
-    }
-  }
-
-  // 2. Detect lockfile
-  if (
-    await fileExists(
-      path.join(projectPath, "pnpm-lock.yaml")
-    )
-  ) {
-    return "pnpm";
-  }
-
-  if (
-    await fileExists(
-      path.join(projectPath, "package-lock.json")
-    )
-  ) {
-    return "npm";
-  }
-
-  if (
-    await fileExists(
-      path.join(projectPath, "yarn.lock")
-    )
-  ) {
-    return "yarn";
-  }
-
-  throw new Error(
-    "Unable to detect package manager"
-  );
-}
-
+/**
+ * Install dependencies (with network) and run the build script (without
+ * network) inside the release sandbox.
+ */
 export async function buildRelease({
   releaseId,
   workspacePath,
+  sandbox,
+  log = async () => {},
 }) {
-  console.log(`Building release ${releaseId}`);
-  console.log(`Workspace ${workspacePath}`);
+  const packageJson = await readPackageJson(workspacePath);
 
-  const packageJson =
-    await readPackageJson(workspacePath);
-
-  const buildScript =
-    packageJson.scripts?.build;
-
-  if (!buildScript) {
+  if (!packageJson.scripts?.build) {
     throw new Error(
-      "No build script found in package.json"
+      'No "build" script found in package.json; ShipFlow needs one that writes the site to dist/'
     );
   }
 
-  const packageManager =
-    await detectPackageManager(
-      workspacePath,
-      packageJson
-    );
-
-  console.log(
-    `Package manager: ${packageManager}`
+  const packageManager = await detectPackageManager(
+    workspacePath,
+    packageJson
   );
 
-  console.log(
-    `Build script: ${buildScript}`
+  await log(
+    `Package manager: ${packageManager.name} ` +
+      (packageManager.hasLockfile
+        ? "(lockfile found, reproducible install)"
+        : "(no lockfile, install is not reproducible)")
   );
 
-  if (packageManager === "pnpm") {
-    console.log("Installing dependencies...");
+  await log(`Build script: ${packageJson.scripts.build}`);
+  await log(`Sandbox: ${sandbox.kind}`);
 
-    await execFileAsync(
-      "pnpm",
-      ["install", "--frozen-lockfile"],
-      {
-        cwd: workspacePath,
-      }
-    );
-
-    console.log("Running build...");
-
-    await execFileAsync(
-      "pnpm",
-      ["run", "build"],
-      {
-        cwd: workspacePath,
-      }
-    );
-  }
-
-  if (packageManager === "npm") {
-    console.log("Installing dependencies...");
-
-    await execFileAsync(
-      "npm",
-      ["ci"],
-      {
-        cwd: workspacePath,
-      }
-    );
-
-    console.log("Running build...");
-
-    await execFileAsync(
-      "npm",
-      ["run", "build"],
-      {
-        cwd: workspacePath,
-      }
-    );
-  }
-
-  if (packageManager === "yarn") {
-    console.log("Installing dependencies...");
-
-    await execFileAsync(
-      "yarn",
-      ["install", "--frozen-lockfile"],
-      {
-        cwd: workspacePath,
-      }
-    );
-
-    console.log("Running build...");
-
-    await execFileAsync(
-      "yarn",
-      ["build"],
-      {
-        cwd: workspacePath,
-      }
-    );
-  }
-
-  console.log(
-    `Build completed for ${releaseId}`
+  const install = await sandbox.exec(
+    "Dependency install",
+    installCommand(packageManager),
+    { timeoutMs: config.installTimeoutMs }
   );
+
+  await log(`Dependency install output:\n${install.output}`);
+
+  // Repository code gets no network access after dependencies are installed.
+  await sandbox.disableNetwork();
+
+  const build = await sandbox.exec(
+    "Build",
+    runScriptCommand(packageManager, "build"),
+    { timeoutMs: config.buildTimeoutMs }
+  );
+
+  await log(`Build output:\n${build.output}`);
 
   return {
     releaseId,
     workspacePath,
+    packageJson,
+    packageManager,
   };
 }

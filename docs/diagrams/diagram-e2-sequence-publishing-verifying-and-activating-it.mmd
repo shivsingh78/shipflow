@@ -1,0 +1,30 @@
+%% title: Diagram E2 — Sequence: publishing, verifying and activating it
+sequenceDiagram
+  autonumber
+  participant CLI as shipflow CLI
+  participant API as API + site server
+  participant PG as PostgreSQL
+  participant W as Worker
+  participant SB as Docker sandbox
+  participant S3 as S3
+  W->>PG: stage DEPLOY
+  W->>SB: copy dist/ out, then remove sandbox
+  W->>W: validate artifact (index.html, assets, limits)
+  W->>S3: upload releases/{id}/build/, compare sizes
+  W->>PG: artifact_path, stage VERIFY
+  W->>API: GET /preview/{id}/ (candidate)
+  API->>S3: read index.html
+  API-->>W: 200, text/html, release header
+  W->>PG: stage ACTIVATE, INSERT activations
+  W->>API: GET site root (live check)
+  API-->>W: 200, text/html, release header
+  W->>PG: SUCCESS + RELEASE_SUCCESS notification
+  CLI->>API: GET /releases/{id}
+  API-->>CLI: SUCCESS + URL
+  alt failure in DEPLOY or VERIFY
+    W->>PG: FAILED, ERROR logs, RELEASE_FAILED
+    Note over W,PG: pointer never moved, previous release live
+  else live check fails after ACTIVATE
+    W->>PG: INSERT activations (REVERT) if still newest
+    W->>PG: FAILED
+  end

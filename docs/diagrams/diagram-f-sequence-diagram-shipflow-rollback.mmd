@@ -1,0 +1,34 @@
+%% title: Diagram F — Sequence diagram: shipflow rollback
+sequenceDiagram
+  autonumber
+  actor Dev as Developer
+  participant CLI as shipflow CLI
+  participant API as API (rollbackRelease)
+  participant PG as PostgreSQL
+  participant S3 as S3
+  participant Site as Site server
+  Dev->>CLI: shipflow rollback releaseId
+  CLI->>API: POST /rollback/{id}
+  API->>API: validate ID format (400 if invalid)
+  API->>PG: SELECT release
+  alt not found
+    API-->>CLI: 404 not found
+  else status is not SUCCESS or no artifact_path
+    API-->>CLI: 409 cannot be a rollback target
+  else already the active release
+    API-->>CLI: 409 already active
+  end
+  API->>S3: list artifact_path/ and require index.html
+  alt artifacts missing
+    API-->>CLI: 409 artifacts missing
+  end
+  API->>PG: INSERT activations (ROLLBACK) under advisory lock
+  API->>Site: live check expects target release header
+  alt live check passes
+    API->>PG: ROLLBACK_SUCCESS log + notification
+    API-->>CLI: 200 rolled back (previous to target)
+  else live check fails
+    API->>PG: INSERT activations (REVERT) if still newest
+    API->>PG: ROLLBACK_FAILED log + notification
+    API-->>CLI: 502 failed live check
+  end

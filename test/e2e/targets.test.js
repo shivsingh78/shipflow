@@ -198,6 +198,34 @@ test("ssh target: a failed live check switches the server back", TIMEOUT, async 
   assert.match((await get("http://vps:8082/")).body, /ShipFlow fixture v1/);
 });
 
+test("ssh target: a FIRST deployment that fails its live check is taken offline, not left serving", TIMEOUT, async () => {
+  const dir = projectDir("vps-first");
+  writeConfig(dir, { name: "vps-first", repository: repo("site-v1"), target: "ssh", path: "/srv/site3", url: "http://vps:8083/", verifyPath: "/missing.html" });
+  assert.equal((await cli(["secrets", "set", "SSH_PRIVATE_KEY", "--from-file", "/keys/deploy_key"], { cwd: dir })).code, 0);
+
+  const first = await cli(["deploy"], { cwd: dir });
+  const releaseId = releaseIdOf(first.stdout);
+
+  assert.equal(first.code, 1, first.all);
+  assert.match(first.stderr, /Stage: ACTIVATE/);
+  assert.match(first.stderr, /taken offline and is not served/);
+  assert.doesNotMatch(first.stderr, /restored previous release/);
+
+  // Not served by the server, and not recorded as live.
+  assert.equal((await get("http://vps:8083/")).status, 404);
+  const { body } = await api("/projects/vps-first");
+  assert.equal(body.activeReleaseId, null);
+  const status = (await api(`/releases/${releaseId}`)).body.release;
+  assert.equal(status.status, "FAILED");
+  assert.equal(status.is_active, false);
+
+  // A corrected configuration deploys normally afterwards.
+  writeConfig(dir, { name: "vps-first", repository: repo("site-v1"), target: "ssh", path: "/srv/site3", url: "http://vps:8083/" });
+  const second = await cli(["deploy"], { cwd: dir });
+  assert.equal(second.code, 0, second.all);
+  assert.match((await get("http://vps:8083/")).body, /ShipFlow fixture v1/);
+});
+
 test("shipflow target: projects are routed by hostname with separate live releases", TIMEOUT, async () => {
   const dir = projectDir("routed");
   writeConfig(dir, { name: "routed", repository: repo("site-v2"), target: "shipflow", hostname: "routed.test" });

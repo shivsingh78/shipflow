@@ -191,6 +191,21 @@ export function compareManifests(local, remote) {
   return problems;
 }
 
+/**
+ * Remove the `current` symlink, but only while it still points at
+ * `releaseId`; anything else (another release, a real directory) is left
+ * alone. Only the symlink is removed, never a release directory.
+ */
+export function deactivateCommand(targetConfig, releaseId) {
+  releaseDir(targetConfig, releaseId);
+  const current = `${targetConfig.path}/current`;
+
+  return (
+    `if [ -L ${quote(current)} ] && [ "$(readlink ${quote(current)})" = ${quote(`releases/${releaseId}`)} ]; ` +
+    `then rm -f ${quote(current)}; fi`
+  );
+}
+
 export const sshTarget = {
   name: "ssh",
   description: "Static files on your own server over SSH (versioned dirs + atomic symlink)",
@@ -293,6 +308,10 @@ export const sshTarget = {
           `mv -Tf ${quote(link)} ${quote(`${targetConfig.path}/current`)}`
       )
     );
+  },
+
+  async deactivate(ctx) {
+    await withSession(ctx, ({ run }) => run(deactivateCommand(ctx.targetConfig, ctx.releaseId)));
   },
 
   async verifyLive(ctx) {

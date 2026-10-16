@@ -101,12 +101,44 @@ deployment:
 | `shipflow secrets set\|list\|rm` | deployment secrets, encrypted on the server, never printed |
 | `shipflow projects [name]`, `shipflow targets` | inspect projects and supported targets |
 | `shipflow doctor` | diagnostics; no secrets printed |
+| `shipflow cloud deploy\|status\|destroy` | create, inspect and remove one temporary AWS EC2 VPS (see below) |
 
 - `--json` gives machine-readable output.
 - Exit codes: `0` ok, `1` failed, `2` usage/config error, `3` server
   unreachable or unauthorized, `4` timeout.
 - In CI, set `SHIPFLOW_API_URL` and `SHIPFLOW_API_TOKEN` instead of using
   `login`.
+
+## Try it on a real server: temporary AWS EC2 VPS
+
+`shipflow cloud deploy` is an interactive wizard that creates **one** EC2 instance
+in **your own** AWS account, then deploys a **public** repository to it through the
+normal pipeline and the `ssh` target (immutable releases, checksum verification,
+atomic switch, rollback). It is for testing, not production, and static sites only.
+
+```bash
+shipflow cloud deploy       # asks for credentials, region, repo, ... then shows a review screen
+shipflow cloud status       # state and public IP
+shipflow cloud destroy      # terminate it and remove its resources (type DESTROY)
+```
+
+- **Credentials:** your AWS profile / SSO, or typed keys held in memory only. Never
+  saved, never accepted as flags. Validated with STS before anything is created.
+- **Confirmation:** you must type `CREATE` after a review screen (resources, firewall,
+  estimated cost). There is no `--yes`.
+- **Firewall:** SSH only from the worker's egress IP/CIDR that you confirm; HTTP open.
+  No Elastic IP, NAT gateway or load balancer is created.
+- **Cost:** `t3.micro` with 8 GiB is on the order of $0.017/hour (about $12.5/month)
+  **while it exists**. The estimate uses AWS price data checked 2026-10-15 (the EBS rate
+  is unverified) and is not a billing guarantee; AWS credits may not cover every charge.
+  Run `shipflow cloud destroy` when done.
+- **Needs:** a ShipFlow server with `SHIPFLOW_SECRETS_KEY`, reachable while the wizard
+  runs (the worker uploads to the VPS), and a fixed worker egress IP.
+- **Limits:** plain HTTP, one VM, default VPC, x86_64, public repos only. Tested with fakes
+  and a local STS stub, **not yet against a live AWS account**.
+
+IAM permissions, every question, cleanup details and limitations:
+[cli/README.md](cli/README.md#temporary-aws-ec2-vps-shipflow-cloud).
 
 ## How a release works
 
@@ -169,6 +201,9 @@ The e2e suite drives the real CLI. It checks:
   symlink;
 - host-routed projects, check mode, cancellation, and webhook signature and
   dedupe.
+
+The AWS wizard has its own unit tests (fake EC2/STS, plus the real AWS SDK's request
+serialization with the network stubbed); no test or CI job creates AWS resources.
 
 GitHub Actions runs both suites on every push and pull request (`.github/workflows/ci.yml`).
 

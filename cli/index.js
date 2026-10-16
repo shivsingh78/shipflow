@@ -40,6 +40,8 @@ import {
   ProjectConfigError,
 } from "./lib/projectConfig.js";
 import { createPrompter, isInteractive, readSecret } from "./lib/prompt.js";
+import { CloudError, UsageError } from "./lib/errors.js";
+import { followRelease as followUntilFinal } from "./lib/follow.js";
 
 // Exit codes (stable, for scripts and CI).
 export const EXIT = {
@@ -70,6 +72,7 @@ const USAGE = [
   "  shipflow projects [name]                         List projects or show one",
   "  shipflow targets                                 List supported deployment targets",
   "  shipflow doctor [-c shipflow.yml]                Check configuration, server and target",
+  "  shipflow cloud deploy|status|destroy             Temporary AWS EC2 VPS wizard (see: shipflow cloud help)",
   "",
   "Options: --json (machine-readable output), --server <url>, -h/--help, -v/--version",
   "",
@@ -79,8 +82,6 @@ const USAGE = [
   "",
   "Exit codes: 0 ok, 1 failed, 2 usage/config error, 3 server unreachable/unauthorized, 4 timeout",
 ].join("\n");
-
-class UsageError extends Error {}
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -453,39 +454,14 @@ async function init(argv) {
 |--------------------------------------------------------------------------
 */
 
-async function followRelease(release, { timeoutMs, pollMs = 2000 }) {
-  const startedAt = Date.now();
-  let lastState = null;
-  let consecutiveErrors = 0;
-
-  while (Date.now() - startedAt < timeoutMs) {
-    let current;
-
-    try {
-      current = (await getReleaseStatus(release.release_id)).release;
-      consecutiveErrors = 0;
-    } catch (error) {
-      // Tolerate brief API restarts while a build is running.
-      if (++consecutiveErrors >= 5 || error.status === 404) throw error;
-      await sleep(pollMs);
-      continue;
-    }
-
-    const state = `${current.current_stage} (${current.status})`;
-
-    if (state !== lastState && !jsonMode) {
-      console.log(`→ ${state}`);
-      lastState = state;
-    }
-
-    if (["SUCCESS", "FAILED", "CANCELLED"].includes(current.status)) {
-      return current;
-    }
-
-    await sleep(pollMs);
-  }
-
-  return null;
+function followRelease(release, { timeoutMs, pollMs }) {
+  return followUntilFinal(release, {
+    timeoutMs,
+    pollMs,
+    onState: (state) => {
+      if (!jsonMode) console.log(`→ ${state}`);
+    },
+  });
 }
 
 async function deploy(argv) {
@@ -759,6 +735,12 @@ async function targets(argv) {
 |--------------------------------------------------------------------------
 */
 
+async function cloud(argv) {
+  // Loaded on demand: other commands never load the AWS SDK.
+  const { runCloud } = await import("./lib/cloud/commands.js");
+  return runCloud(argv);
+}
+
 async function doctor(argv) {
   const { values } = parse(argv);
   const checks = [];
@@ -862,6 +844,7 @@ const commands = {
   projects,
   targets,
   doctor,
+  cloud,
 };
 
 const [command, ...rest] = process.argv.slice(2);
@@ -893,6 +876,12 @@ try {
   if (error instanceof UsageError) {
     console.error(error.message);
     process.exitCode = EXIT.USAGE;
+  } else if (error instanceof CloudError) {
+    out({ error: error.message, hint: error.hint }, () => {
+      console.error(`❌ ${error.message}`);
+      if (error.hint) console.error(`   ${error.hint}`);
+    });
+    process.exitCode = error.exitCode;
   } else if (error instanceof ProjectConfigError) {
     out({ error: "invalid configuration", errors: error.errors }, () => console.error(`❌ ${error.message}`));
     process.exitCode = EXIT.USAGE;

@@ -51,44 +51,59 @@ export function createPrompter({ input = process.stdin, output = process.stderr 
   return { ask, choose, confirm, close: () => rl.close() };
 }
 
+// Terminal escape sequences (arrow keys, bracketed-paste markers, ...).
+const ESCAPE_SEQUENCE = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+
 /**
  * Read a secret without echoing it (TTY), or the whole of stdin when piped.
+ *
+ * A terminal delivers pasted text as one chunk (for example "secret\r"), so
+ * input is processed character by character, not chunk by chunk.
  */
-export async function readSecret(promptText) {
-  if (!process.stdin.isTTY) {
+export async function readSecret(promptText, { input = process.stdin, output = process.stderr } = {}) {
+  if (!input.isTTY) {
     const chunks = [];
-    for await (const chunk of process.stdin) chunks.push(chunk);
+    for await (const chunk of input) chunks.push(Buffer.from(chunk));
     return Buffer.concat(chunks).toString("utf8").replace(/\r?\n$/, "");
   }
 
-  process.stderr.write(promptText);
+  output.write(promptText);
 
   return new Promise((resolve, reject) => {
-    const stdin = process.stdin;
     let value = "";
 
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.setEncoding("utf8");
+    const finish = (error) => {
+      input.setRawMode(false);
+      input.pause();
+      input.removeListener("data", onData);
+      output.write("\n");
 
-    const onData = (char) => {
-      if (char === "\r" || char === "\n" || char === "\u0004") {
-        stdin.setRawMode(false);
-        stdin.pause();
-        stdin.removeListener("data", onData);
-        process.stderr.write("\n");
-        resolve(value);
-      } else if (char === "\u0003") {
-        stdin.setRawMode(false);
-        stdin.removeListener("data", onData);
-        reject(new Error("Cancelled"));
-      } else if (char === "\u007f" || char === "\b") {
-        value = value.slice(0, -1);
-      } else {
-        value += char;
+      if (error) reject(error);
+      else resolve(value);
+    };
+
+    const onData = (chunk) => {
+      for (const char of String(chunk).replace(ESCAPE_SEQUENCE, "")) {
+        if (char === "\r" || char === "\n" || char === "\u0004") {
+          // Enter (or Ctrl-D) ends the secret; anything typed after it is dropped.
+          return finish();
+        }
+
+        if (char === "\u0003") {
+          return finish(new Error("Cancelled"));
+        }
+
+        if (char === "\u007f" || char === "\b") {
+          value = value.slice(0, -1);
+        } else if (char >= " ") {
+          value += char;
+        }
       }
     };
 
-    stdin.on("data", onData);
+    input.setRawMode(true);
+    input.resume();
+    input.setEncoding("utf8");
+    input.on("data", onData);
   });
 }

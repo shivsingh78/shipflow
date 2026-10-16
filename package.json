@@ -41,6 +41,8 @@
     "yaml": "^2.9.1"
   },
   "devDependencies": {
+    "@aws-sdk/client-ec2": "^3.1073.0",
+    "@aws-sdk/client-sts": "^3.1073.0",
     "nodemon": "^3.1.14"
   }
 }

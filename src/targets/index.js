@@ -16,6 +16,9 @@
 //   async activate(ctx)         -> void         make ctx.releaseId live (called
 //                                               while the project's activation
 //                                               lock is held)
+//   async deactivate(ctx)       -> void         stop serving ctx.releaseId when
+//                                               there is no earlier release to
+//                                               switch back to (first deploy)
 //   async verifyLive(ctx)       -> { url, detail }
 //   liveUrl(ctx)                -> string | null
 //

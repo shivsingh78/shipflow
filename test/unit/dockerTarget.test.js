@@ -87,6 +87,11 @@ function fakeRemote(script = () => undefined) {
           if (target?.endsWith("default.conf")) state.conf = options.stdin.text;
           return ok();
         }
+        if (command.includes("'wget'") && /127\.0\.0\.1\/__shipflow_[a-f0-9]{16}/.test(command)) {
+          // the handshake reports what the latest config serves
+          const served = /# shipflow-upstream: (?:none|\S+:\d+ release=(\w{8}))/.exec(state.conf ?? "");
+          return served ? ok(served[1] ?? "none") : no();
+        }
         if (command.includes("'wget'")) return ok(state.wget);
         if (command.includes("'ps' '-a'")) return ok("");
         return ok();
@@ -105,7 +110,7 @@ const commandsOf = (calls) => calls.map((c) => c.command);
 test("registered and capabilities", () => {
   const target = getTarget("docker");
   assert.deepEqual(target.capabilities, {
-    artifactTypes: ["image"], candidateVerification: "http", atomicActivation: true, rollback: true,
+    artifactTypes: ["image"], candidateVerification: "http", atomicActivation: true, rollback: true, verifyAfterRevert: true,
   });
   assert.deepEqual(target.requiredSecrets(targetConfig), ["DOCKER_KEY"]);
 });
@@ -271,20 +276,34 @@ test("activate restores the previous config and does not reload when nginx -t fa
   assert.equal(state.conf, previous);
 });
 
-test("activate stops other release containers but never the new one", async () => {
-  const { calls, state, deps } = fakeRemote((command) => {
-    if (command.includes("'ps'") && command.includes("status") === false && command.includes("{{.Names}}") && !command.includes("'-a'")) {
-      return { output: "shipflow-shop-Abcd1234\nshipflow-shop-Old00000\nother-thing\n" };
-    }
-    return undefined;
-  });
+const runningList = (command) =>
+  command.includes("'ps'") && command.includes("{{.Names}}") && !command.includes("'-a'")
+    ? { output: "shipflow-shop-Abcd1234\nshipflow-shop-Old00000\nother-thing\n" }
+    : undefined;
+
+test("activate keeps the other releases running; they are only stopped after the live check passes", async () => {
+  const { calls, state, deps } = fakeRemote((command) => runningList(command));
   state.conf = renderProxyConfig(null);
   const { ctx } = makeCtx();
-  await createDockerTarget(deps).activate(ctx);
+  const target = createDockerTarget(deps);
+
+  await target.activate(ctx);
+  assert.deepEqual(commandsOf(calls).filter((c) => c.includes("'stop'")), [], "activation stops nothing, so a failed live check can fall back");
+
+  await target.verifyLive(ctx);
   const stops = commandsOf(calls).filter((c) => c.includes("'stop'"));
 
   assert.deepEqual(stops.length, 1);
-  assert.ok(stops[0].includes("shipflow-shop-Old00000"));
+  assert.ok(stops[0].includes("shipflow-shop-Old00000"), "the superseded release is stopped, never the new one or foreign containers");
+});
+
+test("verifyLive stops nothing when the proxy no longer serves this release", async () => {
+  const { calls, state, deps } = fakeRemote((command) => runningList(command));
+  state.conf = renderProxyConfig({ container: "shipflow-shop-Newer000", port: 3000, releaseId: "Newer000" });
+
+  await createDockerTarget(deps).verifyLive(makeCtx().ctx);
+
+  assert.deepEqual(commandsOf(calls).filter((c) => c.includes("'stop'")), []);
 });
 
 test("deactivate serves 503 only when the proxy points at this release, and removes the candidate", async () => {
@@ -357,7 +376,9 @@ test("hostile names and values are rejected or quoted", async () => {
 
 test("proxy config generator", () => {
   const conf = renderProxyConfig({ container: "shipflow-shop-Abcd1234", port: 3000, releaseId: "Abcd1234" });
-  assert.match(conf, /proxy_pass http:\/\/shipflow-shop-Abcd1234:3000;/);
+  // The upstream is resolved per request (see test/unit/dockerTargetReliability.test.js for the rationale).
+  assert.match(conf, /set \$shipflow_upstream "shipflow-shop-Abcd1234:3000";/);
+  assert.match(conf, /proxy_pass http:\/\/\$shipflow_upstream;/);
   assert.match(conf, /# shipflow-upstream: shipflow-shop-Abcd1234:3000 release=Abcd1234/);
   assert.deepEqual(parseActiveUpstream(conf), { container: "shipflow-shop-Abcd1234", port: 3000, releaseId: "Abcd1234" });
   assert.equal(parseActiveUpstream(renderProxyConfig(null)), null);

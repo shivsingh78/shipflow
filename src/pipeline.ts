@@ -249,6 +249,8 @@ export async function runPipeline({
   let currentStage = "RELEASE";
   let sandbox: Awaited<ReturnType<typeof createSandbox>> | null = null;
   let secretValues: string[] = [];
+  // Set once a target may have put a candidate in place; see discardUnusedCandidate.
+  let candidateCtx: TargetContext | null = null;
   let cancelWatch: ReturnType<typeof setInterval> | null = null;
   let cancelled = false;
   const releaseRoot = path.join(config.workspaceRoot, releaseId);
@@ -446,6 +448,8 @@ export async function runPipeline({
       log: stageLog("DEPLOY"),
     });
 
+    candidateCtx = ctx;
+
     const preparedTarget = await target.prepare(ctx);
     await log("DEPLOY", `Target "${target.name}": ${preparedTarget.detail}`);
 
@@ -531,6 +535,10 @@ export async function runPipeline({
       previousReleaseId: activation.previousReleaseId,
     };
   } catch (error) {
+    if (candidateCtx) {
+      await discardUnusedCandidate({ target, ctx: candidateCtx, log: stageLog(currentStage) });
+    }
+
     const isCancel = error instanceof CancelledError || cancelled;
     const failureMessage = isCancel ? "Cancelled by user" : redactAll(errorMessage(error), secretValues);
     const commandOutput = commandOutputOf(error);
@@ -584,6 +592,31 @@ export async function runPipeline({
       .catch((error) =>
         console.error("Failed to clean workspace:", errorMessage(error))
       );
+  }
+}
+
+/**
+ * After a failed or cancelled release, let the target remove a candidate that
+ * will never go live (for example one prepared and verified, then cancelled
+ * before activation, or whose activation threw). Targets refuse to remove a
+ * release that is live; a cleanup failure is logged and never hides the
+ * original error.
+ */
+export async function discardUnusedCandidate({
+  target,
+  ctx,
+  log,
+}: {
+  target: DeploymentTarget;
+  ctx: TargetContext;
+  log: ReleaseLog;
+}): Promise<void> {
+  if (!target.discardCandidate) return;
+
+  try {
+    await target.discardCandidate(ctx);
+  } catch (error) {
+    await log(`Could not remove the unused candidate: ${errorMessage(error)}`, "WARN");
   }
 }
 
@@ -688,9 +721,21 @@ export async function revertToPrevious({
       apply: () => target.activate(previousCtx),
     });
 
-    return reverted
-      ? `restored previous release ${previousReleaseId}`
-      : "a newer activation has since replaced it";
+    if (!reverted) return "a newer activation has since replaced it";
+
+    // Targets that stop superseded releases can ask for the restored release to
+    // be re-checked, so a restore that does not actually serve is reported.
+    if (target.capabilities.verifyAfterRevert) {
+      try {
+        const live = await target.verifyLive(previousCtx);
+
+        return `restored previous release ${previousReleaseId}; its live check passed (${live.detail})`;
+      } catch (error) {
+        return `restored previous release ${previousReleaseId}, but its live check FAILED: ${errorMessage(error)}`;
+      }
+    }
+
+    return `restored previous release ${previousReleaseId}`;
   } catch (error) {
     return `ALSO FAILED to restore ${previousReleaseId}: ${errorMessage(error)}`;
   }

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "events";
 import { Readable } from "stream";
 
-import { readSecret } from "../../cli/lib/prompt.js";
+import { readSecret } from "../../cli/dist/lib/prompt.js";
 
 /** A minimal fake TTY: feed it chunks the way a terminal would. */
 function fakeTty() {

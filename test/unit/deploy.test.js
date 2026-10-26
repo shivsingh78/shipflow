@@ -7,7 +7,7 @@ import path from "path";
 import {
   localAssetReferences,
   validateArtifact,
-} from "../../src/deploy.js";
+} from "../../dist/src/deploy.js";
 
 async function artifact(files) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sf-artifact-"));

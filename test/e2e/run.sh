@@ -27,6 +27,6 @@ cleanup() {
 trap cleanup EXIT
 
 compose build api
-compose build fixtures vps
-compose up -d --wait postgres redis s3 fixtures vps api egress-proxy worker
+compose build fixtures vps dockerhost
+compose up -d --wait postgres redis s3 fixtures vps dockerhost api egress-proxy worker
 compose run --rm e2e

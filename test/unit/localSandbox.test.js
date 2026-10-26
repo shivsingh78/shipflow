@@ -14,10 +14,10 @@ process.env.AWS_SECRET_ACCESS_KEY = "unit-test-aws-secret";
 process.env.DB_PASSWORD = "unit-test-db-password";
 process.env.SHIPFLOW_API_TOKEN = "unit-test-api-token";
 
-const { createSandbox } = await import("../../src/sandbox.js");
-const { buildRelease } = await import("../../src/build.js");
-const { testRelease } = await import("../../src/test.js");
-const { createBuildEnvironment } = await import("../../src/buildEnv.js");
+const { createSandbox } = await import("../../dist/src/sandbox.js");
+const { buildRelease } = await import("../../dist/src/build.js");
+const { testRelease } = await import("../../dist/src/test.js");
+const { createBuildEnvironment } = await import("../../dist/src/buildEnv.js");
 
 let root;
 

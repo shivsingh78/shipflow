@@ -73,12 +73,49 @@ deployment:
 | `build.output` | no | `auto` | Relative directory that must contain `index.html`. |
 | `build.test` | no | `auto` | A missing or placeholder test script is recorded as `SKIPPED`, never `PASSED`. |
 | `build.env` | no | `{}` | Public values passed to the build. Visible to repository code. |
-| `deployment.target` | yes | — | `shipflow` or `ssh` (run `shipflow targets` to see what the server supports). |
+| `build.strategy` | no | detected | `static`, `node` or `dockerfile`. See [Build strategies](#build-strategies-and-detection). |
+| `build.dockerfile` | no | `Dockerfile` | Dockerfile path for the `dockerfile` strategy. |
+| `runtime.port` | image targets | — | Port the application listens on inside the container. |
+| `runtime.start` | no | `package.json` `start` script | Start command for the `node` strategy. |
+| `runtime.env` | no | `{}` | Public environment values for the running container. |
+| `runtime.secrets` | no | `[]` | Names of ShipFlow secrets injected as environment variables at run time. |
+| `deployment.target` | yes | — | `shipflow`, `ssh`, `docker` or `kubernetes` (run `shipflow targets` to see what the server supports). |
+| `deployment.docker.*` | target `docker` | see example | `host`, `user`, `hostKey` (pinned), `publishPort` (default 80), `url`, `privateKeySecret`. |
+| `deployment.kubernetes.*` | target `kubernetes` | see example | `namespace`, `registry`, `url` required; `kubeconfigSecret` (default `KUBECONFIG`), `registryAuthSecret`, `replicas` (default 1). `project.name` is limited to 35 characters. |
 | `deployment.shipflow.hostname` | no | — | Unique per server. |
 | `deployment.ssh.*` | target `ssh` | see example | `hostKey` is enforced; host-key checking is never disabled. |
 | `verification.path` | no | `/` | With `/`, the SSH target also checks that the served `index.html` is byte-identical to the build. |
 | `verification.expectStatus` | no | `200` | |
 | `github.*` | no | see example | Has no effect unless the server has `SHIPFLOW_GITHUB_WEBHOOK_SECRET`. |
+
+## Build strategies and detection
+
+A *strategy* decides how the repository is built; a *target* decides where
+the result runs. They only have to agree on the artifact type: strategy
+`static` produces files (targets `shipflow`, `ssh`); `node` and `dockerfile`
+produce a container image (targets `docker`, `kubernetes`). An incompatible
+pair fails in PREPARE with a message naming both.
+
+Detection is deterministic and depends on the target:
+
+1. An explicit `build.strategy` always wins (and is checked against the target).
+2. Targets `shipflow` and `ssh` always use `static`. A repository that merely
+   contains a Dockerfile is still deployed as a static site, exactly as before.
+3. Targets `docker` and `kubernetes`: a Dockerfile (at the root, or
+   `build.dockerfile`) selects `dockerfile`; otherwise a `package.json` with a
+   `start` script (or `runtime.start`) selects `node`. If both exist the
+   Dockerfile wins and the logs say so. Otherwise, or if the repository looks
+   like a static-only site, detection fails and tells you what to set.
+4. Image targets require `runtime.port`.
+
+Examples for each combination are in [`examples/`](../examples/).
+
+**Images are built with the host Docker daemon** and are therefore disabled
+until the operator sets `SHIPFLOW_IMAGE_BUILDS=enabled` on the worker; see
+[Container deployments](self-hosting.md#container-deployments-docker-and-kubernetes-targets)
+for what that trades away. Tests run in the isolated sandbox for the `node`
+strategy; the `dockerfile` strategy does not run your tests (use your own CI,
+or pull-request checks on a static or `node` project).
 
 ## Where settings are stored
 

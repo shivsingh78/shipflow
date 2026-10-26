@@ -10,3 +10,7 @@ output
 *.log
 artifacts
 docs
+dist
+cli/dist
+*.tsbuildinfo
+*.tgz

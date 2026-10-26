@@ -6,7 +6,7 @@ import {
   runCommandOrThrow,
   redactSecrets,
   CommandError,
-} from "../../src/runCommand.js";
+} from "../../dist/src/runCommand.js";
 
 const node = process.execPath;
 

@@ -101,6 +101,75 @@ This isolation has limits:
 - **Not for public multi-tenant use.** ShipFlow is meant for a single owner
   or a trusted team, not anonymous users.
 
+## Container deployments (docker and kubernetes targets)
+
+Besides static sites, ShipFlow can build and run container images. Read the
+isolation trade-off first.
+
+**Image builds are off by default.** `docker build` runs the repository's
+Dockerfile `RUN` steps (or the Dockerfile ShipFlow generates for the `node`
+strategy) through the worker's Docker daemon. Unlike the static build
+sandbox, BuildKit cannot attach those steps to the restricted network, so
+they have ordinary outbound network access and run as the daemon allows. Only
+turn this on for repositories you trust as much as the worker host itself:
+
+```bash
+# worker environment (.env)
+SHIPFLOW_IMAGE_BUILDS=enabled
+SHIPFLOW_MAX_IMAGE_BYTES=1073741824        # refuse larger images (default 1 GiB)
+SHIPFLOW_IMAGE_BUILD_TIMEOUT_MS=900000     # default 15 minutes
+```
+
+No secret, build argument or environment variable is passed to `docker
+build`. The finished image is stored in the artifact store (local volume or
+S3) as a `docker save` archive and identified by its image ID; rollbacks
+reload the stored archive and never rebuild. A cancelled release stops at the
+next stage boundary; a `docker build` already running finishes first.
+
+### Docker target
+
+Runs the image on a **separate** Docker host that you own, reached over SSH
+with a pinned host key, the same trust model as the `ssh` target. Prepare it
+once:
+
+```bash
+# on the Docker host: a dedicated non-root user that may run docker
+sudo adduser --disabled-password deploy && sudo usermod -aG docker deploy
+# append the public key to /home/deploy/.ssh/authorized_keys, then:
+shipflow secrets set SSH_PRIVATE_KEY < deploy_key      # on your workstation
+```
+
+Each project gets a Docker network and a managed `nginx` proxy container that
+publishes `publishPort`. A release runs as its own container; ShipFlow starts
+the candidate (no published port), checks its health from the proxy network,
+and only then rewrites the proxy configuration and reloads it (`nginx -t`
+first). If the live check fails, the previous release is switched back; if
+nothing was live, the proxy answers 503. Runtime secrets travel in a
+temporary `0600` env file, never on a command line. The newest three
+releases' containers are kept stopped for fast rollback. Add TLS in front of
+`publishPort` yourself (a load balancer, or Caddy/nginx on the host).
+
+Limits: one host is one failure domain (no high availability); the activation
+reload is graceful, but connections to the old container end when it stops.
+
+### Kubernetes / K3s target
+
+Pushes the image to a registry you own and applies a per-release `Deployment`
+plus a candidate `Service`; activation switches the live `Service` selector.
+Needs `registry` (nodes cannot read ShipFlow's artifact store), a kubeconfig
+stored as a secret (bearer-token or client-certificate auth only; `exec`
+plugins and file-path credentials are rejected), and, for private registries,
+a Docker `config.json` secret. Exposing the live `Service`
+(`shipflow-<project>`, ClusterIP) through an Ingress or load balancer is yours
+to configure.
+
+**Honest status:** this adapter is verified only against a fake Kubernetes API
+server and a fake Docker runner in unit tests. It has not been run against a
+real cluster or registry. `replicas: N` gives pod-level redundancy; a
+single-node or single-control-plane K3s cluster remains a single point of
+failure, and Service-selector switching is subject to normal kube-proxy
+propagation delay.
+
 ## Secrets
 
 - `SHIPFLOW_API_TOKEN` authenticates the CLI. Rotate it by changing `.env`,

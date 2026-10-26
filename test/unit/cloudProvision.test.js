@@ -11,8 +11,8 @@ import {
   waitForBootstrap,
   waitForRunning,
   waitForStatusOk,
-} from "../../cli/lib/cloud/provision.js";
-import { buildUserData } from "../../cli/lib/cloud/userData.js";
+} from "../../cli/dist/lib/cloud/provision.js";
+import { buildUserData } from "../../cli/dist/lib/cloud/userData.js";
 import {
   PUBLIC_IP,
   PUBLIC_KEY,

@@ -3,13 +3,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { isStaleCandidate } from "../../src/activation.js";
-import { selectPrunable } from "../../src/retention.js";
-import { isOrphaned, orphanMessage } from "../../src/reconcile.js";
-import { classifyRef } from "../../src/prepare.js";
-import { parseRemoteManifest, compareManifests, explainSshFailure } from "../../src/targets/ssh.js";
-import { redactAll, releaseSettings } from "../../src/pipeline.js";
-import { proxyEnvironment } from "../../src/sandbox.js";
+import { isStaleCandidate } from "../../dist/src/activation.js";
+import { selectPrunable } from "../../dist/src/retention.js";
+import { isOrphaned, orphanMessage } from "../../dist/src/reconcile.js";
+import { classifyRef } from "../../dist/src/prepare.js";
+import { parseRemoteManifest, compareManifests, explainSshFailure } from "../../dist/src/targets/ssh.js";
+import { redactAll, releaseSettings } from "../../dist/src/pipeline.js";
+import { proxyEnvironment } from "../../dist/src/sandbox.js";
 
 test("an older DEPLOY candidate never replaces a newer live release", () => {
   assert.equal(isStaleCandidate({ action: "DEPLOY", candidateSeq: 5, activeSeq: 7 }), true);

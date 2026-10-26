@@ -1,0 +1,21 @@
+# A container on a Kubernetes / K3s cluster. ShipFlow pushes the image to YOUR
+# registry and references it by digest. Not verified against a live cluster
+# (see docs/self-hosting.md#kubernetes--k3s-target).
+#   shipflow secrets set KUBECONFIG < kubeconfig.yaml     (token or client-cert auth only)
+#   shipflow secrets set REGISTRY_AUTH < ~/.docker/config.json
+version: 1
+project:
+  name: orders-api
+  repository: https://github.com/you/orders-api
+runtime:
+  port: 3000
+verification:
+  path: /healthz
+deployment:
+  target: kubernetes
+  kubernetes:
+    namespace: apps
+    registry: registry.example.com/team
+    registryAuthSecret: REGISTRY_AUTH
+    replicas: 2
+    url: https://orders.example.com

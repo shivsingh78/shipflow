@@ -1,0 +1,17 @@
+# An application with its own Dockerfile (any language), on a Docker host.
+version: 1
+project:
+  name: worker-app
+  repository: https://github.com/you/worker-app
+build:
+  strategy: dockerfile
+  dockerfile: Dockerfile     # default; relative to the repository root
+runtime:
+  port: 8080
+deployment:
+  target: docker
+  docker:
+    host: docker.example.com
+    user: deploy
+    hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+    url: https://worker.example.com

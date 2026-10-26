@@ -7,7 +7,7 @@ import {
   isAllowedHost,
   vetDestination,
   createEgressProxy,
-} from "../../src/egressProxy.js";
+} from "../../dist/src/egressProxy.js";
 
 const allowlist = ["registry.npmjs.org", ".yarnpkg.com"];
 const publicLookup = async () => [{ address: "104.16.1.34", family: 4 }];

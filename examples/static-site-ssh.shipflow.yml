@@ -1,0 +1,16 @@
+# The same static site, deployed to your own server over SSH.
+# Store the key first:  shipflow secrets set SSH_PRIVATE_KEY < ~/.ssh/deploy_key
+version: 1
+project:
+  name: my-site
+  repository: https://github.com/you/my-site
+build:
+  output: dist
+deployment:
+  target: ssh
+  ssh:
+    host: vps.example.com
+    user: deploy
+    path: /srv/my-site
+    hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+    url: https://my-site.example.com

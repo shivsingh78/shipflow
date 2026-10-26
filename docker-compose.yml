@@ -73,7 +73,7 @@ services:
       dockerfile: Dockerfile
     image: shipflow-app:latest
     restart: unless-stopped
-    command: ["node", "index.js"]
+    command: ["node", "dist/index.js"]
     user: node
 
     env_file: *app-env-file
@@ -107,7 +107,7 @@ services:
     image: shipflow-app:latest
     pull_policy: never
     restart: unless-stopped
-    command: ["node", "worker.js"]
+    command: ["node", "dist/worker.js"]
 
     # Root inside this container is needed to use the Docker socket.
     # Repository code never runs here: it runs in separate sandbox
@@ -137,12 +137,12 @@ services:
 
 
   # Allows sandboxes HTTPS access to package registries only (see
-  # src/egressProxy.js). Set SHIPFLOW_EGRESS_ALLOWLIST to change the list.
+  # src/egressProxy.ts). Set SHIPFLOW_EGRESS_ALLOWLIST to change the list.
   egress-proxy:
     image: shipflow-app:latest
     pull_policy: never
     restart: unless-stopped
-    command: ["node", "src/egressProxy.js"]
+    command: ["node", "dist/src/egressProxy.js"]
     user: node
     environment:
       SHIPFLOW_EGRESS_ALLOWLIST: ${SHIPFLOW_EGRESS_ALLOWLIST:-registry.npmjs.org,registry.yarnpkg.com,repo.yarnpkg.com}

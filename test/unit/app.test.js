@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Readable } from "stream";
 import http from "http";
 
-import { createApiApp, createSiteApp } from "../../src/app.js";
+import { createApiApp, createSiteApp } from "../../dist/src/app.js";
 
 const TOKEN = "unit-test-token-0123456789abcdef";
 const auth = { Authorization: `Bearer ${TOKEN}` };

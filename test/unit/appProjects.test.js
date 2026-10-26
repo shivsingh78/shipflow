@@ -3,8 +3,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 
-import { createApiApp } from "../../src/app.js";
-import { validateProjectConfig, requiredSecrets } from "../../cli/lib/projectConfig.js";
+import { createApiApp } from "../../dist/src/app.js";
+import { validateProjectConfig, requiredSecrets } from "../../cli/dist/lib/projectConfig.js";
 
 const TOKEN = "unit-test-token-0123456789abcdef";
 const auth = { Authorization: `Bearer ${TOKEN}`, "Content-Type": "application/json" };

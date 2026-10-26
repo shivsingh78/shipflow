@@ -1,0 +1,29 @@
+# A Node.js API with no Dockerfile: ShipFlow generates a container image
+# (build.strategy "node": package.json "start" script, lockfile install,
+# non-root user) and runs it on your Docker host behind a managed proxy.
+#
+# Needs SHIPFLOW_IMAGE_BUILDS=enabled on the ShipFlow worker (see docs/self-hosting.md).
+#   shipflow secrets set SSH_PRIVATE_KEY < ~/.ssh/deploy_key
+#   shipflow secrets set DATABASE_URL
+version: 1
+project:
+  name: orders-api
+  repository: https://github.com/you/orders-api
+build:
+  strategy: node            # optional: omitted = detected (see docs/configuration.md)
+runtime:
+  port: 3000
+  env:
+    LOG_LEVEL: info
+  secrets: [DATABASE_URL]   # names only; delivered as environment variables at run time
+verification:
+  path: /healthz
+  expectStatus: 200
+deployment:
+  target: docker
+  docker:
+    host: docker.example.com
+    user: deploy
+    hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"
+    publishPort: 80
+    url: https://orders.example.com

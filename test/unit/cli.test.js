@@ -7,7 +7,7 @@ import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
-const CLI = fileURLToPath(new URL("../../cli/index.js", import.meta.url));
+const CLI = fileURLToPath(new URL("../../cli/dist/index.js", import.meta.url));
 const TOKEN = "cli-test-token";
 const HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";
 

@@ -55,7 +55,9 @@ function defaultGateway() {
         return gateway.match(/../g).reverse().map((h) => parseInt(h, 16)).join(".");
       }
     }
-  } catch {}
+  } catch {
+    // Route lookup is best-effort; fall through to null.
+  }
   return null;
 }
 

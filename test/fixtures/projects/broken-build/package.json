@@ -1,0 +1,1 @@
+{"name":"broken-build","scripts":{"build":"node -e \"process.exit(1)\""}}

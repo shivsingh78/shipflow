@@ -11,9 +11,9 @@ import {
   parseOutput,
   parseRegion,
   parseRepoUrl,
-} from "../../cli/lib/cloud/inputs.js";
-import { uniqueProjectName } from "../../cli/lib/cloud/wizard.js";
-import { estimateCost } from "../../cli/lib/cloud/pricing.js";
+} from "../../cli/dist/lib/cloud/inputs.js";
+import { uniqueProjectName } from "../../cli/dist/lib/cloud/wizard.js";
+import { estimateCost } from "../../cli/dist/lib/cloud/pricing.js";
 
 const rejects = (fn, value, pattern) =>
   assert.throws(() => fn(value), (error) => error instanceof InputError && (!pattern || pattern.test(error.message)), String(value));

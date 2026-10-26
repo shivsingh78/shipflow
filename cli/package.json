@@ -1,15 +1,15 @@
 {
   "name": "shipflow-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI for ShipFlow, a self-hosted CI/CD and static-site deployment server",
   "type": "module",
   "bin": {
-    "shipflow": "./index.js"
+    "shipflow": "./dist/index.js"
   },
   "files": [
-    "index.js",
-    "deploy.js",
-    "lib/",
+    "dist/",
+    "!dist/.tsbuildinfo",
+    "!dist/**/*.map",
     "README.md"
   ],
   "engines": {
@@ -33,5 +33,9 @@
     "type": "git",
     "url": "git+https://github.com/shivsingh78/shipflow.git",
     "directory": "cli"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "tsc -p tsconfig.json"
   }
 }

@@ -5,13 +5,13 @@ import os from "os";
 import path from "path";
 import crypto from "crypto";
 
-import { createLocalStore, assertSafeKey, downloadArtifact } from "../../src/artifactStore.js";
+import { createLocalStore, assertSafeKey, downloadArtifact } from "../../dist/src/artifactStore.js";
 import {
   encryptSecret,
   decryptSecret,
   parseSecretsKey,
   createSecretStore,
-} from "../../src/secrets.js";
+} from "../../dist/src/secrets.js";
 
 async function readBody(stream) {
   const chunks = [];

@@ -5,8 +5,8 @@ import {
   isValidReleaseId,
   validateRepoUrl,
   safeRelativePath,
-} from "../../src/validation.js";
-import { genrate } from "../../src/genrate.js";
+} from "../../dist/src/validation.js";
+import { genrate } from "../../dist/src/genrate.js";
 
 const ALLOWED = ["https://github.com/shiv/"];
 

@@ -1,0 +1,7 @@
+# A static site (Vite, CRA, Astro, plain HTML) served by ShipFlow's own site server.
+version: 1
+project:
+  name: my-site
+  repository: https://github.com/you/my-site
+deployment:
+  target: shipflow

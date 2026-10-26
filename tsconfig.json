@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "tsBuildInfoFile": "dist/.tsbuildinfo",
+    "incremental": true
+  },
+  "include": [
+    "index.ts",
+    "worker.ts",
+    "src/**/*.ts",
+    "cli/lib/projectConfig.ts"
+  ]
+}

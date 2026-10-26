@@ -14,7 +14,7 @@ import { fileURLToPath } from "url";
 const API = process.env.SHIPFLOW_API_URL;
 const SITE = process.env.SHIPFLOW_SITE_URL;
 const TOKEN = process.env.SHIPFLOW_API_TOKEN;
-const CLI = fileURLToPath(new URL("../../cli/index.js", import.meta.url));
+const CLI = fileURLToPath(new URL("../../cli/dist/index.js", import.meta.url));
 const HOST_KEY = fs.readFileSync("/keys/host_key.pub", "utf8").trim();
 // A syntactically valid key that is NOT the server's.
 const WRONG_HOST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl";

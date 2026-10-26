@@ -61,6 +61,22 @@ services:
       timeout: 3s
       retries: 30
 
+  # Stand-in for a user's Docker host for the "docker" target: Docker-in-Docker
+  # plus sshd (deploy user in the docker group). Privileged because dockerd
+  # needs it; test-only, no host ports. Pulls nginx from Docker Hub on first use.
+  dockerhost:
+    build:
+      context: test/e2e/dockerhost
+    image: shipflow-e2e-dockerhost:latest
+    privileged: true
+    volumes:
+      - dockerhost-keys:/keys
+    healthcheck:
+      test: ["CMD", "test", "-f", "/keys/ready"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+
   # The e2e stack must never see real credentials from .env.
   api:
     env_file: !reset []
@@ -72,7 +88,10 @@ services:
 
   worker:
     env_file: !reset []
-    environment: *e2e-environment
+    environment:
+      <<: *e2e-environment
+      # Test stack only; never enabled by default (see docs on image builds).
+      SHIPFLOW_IMAGE_BUILDS: enabled
     depends_on:
       fixtures:
         condition: service_healthy
@@ -81,7 +100,7 @@ services:
     image: shipflow-app:latest
     pull_policy: never
     profiles: ["runner"]
-    command: ["node", "--test", "--test-concurrency=1", "test/e2e/e2e.test.js", "test/e2e/targets.test.js"]
+    command: ["node", "--test", "--test-concurrency=1", "test/e2e/e2e.test.js", "test/e2e/targets.test.js", "test/e2e/images.test.js"]
     environment:
       SHIPFLOW_API_URL: http://api:8000
       SHIPFLOW_SITE_URL: http://api:8080
@@ -90,8 +109,11 @@ services:
       XDG_CONFIG_HOME: /tmp/shipflow-config
     volumes:
       - vps-keys:/keys:ro
+      - dockerhost-keys:/dhkeys:ro
     depends_on:
       vps:
+        condition: service_healthy
+      dockerhost:
         condition: service_healthy
       api:
         condition: service_healthy
@@ -102,3 +124,4 @@ services:
 
 volumes:
   vps-keys:
+  dockerhost-keys:

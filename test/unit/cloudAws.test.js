@@ -12,9 +12,9 @@ import {
   secretsOf,
   toAwsError,
   verifyIdentity,
-} from "../../cli/lib/cloud/aws.js";
-import { createResources } from "../../cli/lib/cloud/provision.js";
-import { buildUserData } from "../../cli/lib/cloud/userData.js";
+} from "../../cli/dist/lib/cloud/aws.js";
+import { createResources } from "../../cli/dist/lib/cloud/provision.js";
+import { buildUserData } from "../../cli/dist/lib/cloud/userData.js";
 import { FAKE_CREDENTIALS, PUBLIC_KEY, awsError, createFakeSts } from "./helpers/cloudHarness.js";
 
 const manual = { mode: "manual", ...FAKE_CREDENTIALS };

@@ -98,3 +98,12 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
 );
 
 ALTER TABLE releases ADD COLUMN IF NOT EXISTS artifacts_pruned BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- Artifact types: static files (the default for every pre-existing release)
+-- or a container image. artifact_path keeps pointing at the artifact-store
+-- prefix so retention and legacy readers keep working.
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS artifact_type VARCHAR(20) NOT NULL DEFAULT 'static';
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS artifact JSONB;
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS build_strategy VARCHAR(20);
+-- Target-specific facts recorded at activation (never secrets).
+ALTER TABLE releases ADD COLUMN IF NOT EXISTS deployment JSONB;

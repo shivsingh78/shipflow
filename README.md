@@ -1,7 +1,7 @@
 # ShipFlow
 
 ShipFlow is a self-hosted, CLI-first CI/CD and deployment server for static
-websites. You run it on a machine you control. You point the `shipflow` CLI at
+websites and containerised apps. You run it on a machine you control. You point the `shipflow` CLI at
 a Git repository, and ShipFlow does the rest:
 
 1. clones the repository;
@@ -32,6 +32,7 @@ GitHub webhook (signed) ─────────┘──► Redis/BullMQ ─
                                                          │
                        artifact storage: local volume or S3-compatible bucket
                        targets: "shipflow" (built-in site server) · "ssh" (your server)
+                                "docker" (your Docker host) · "kubernetes" (your cluster)
 ```
 
 ## Deployment targets
@@ -40,7 +41,17 @@ GitHub webhook (signed) ─────────┘──► Redis/BullMQ ─
 |---|---|---|---|---|---|
 | `shipflow` | ShipFlow's own site port, streamed from artifact storage; host-based routing per project | HTTP (`/preview/<id>/`) | yes (pointer row) | yes | implemented, e2e-tested |
 | `ssh` | your server or VPS: `releases/<id>/` + `current` symlink, served by your nginx/Caddy | SHA-256 of every file | yes (`rename(2)`) | yes | implemented, e2e-tested against OpenSSH + nginx |
-| object storage + CDN, Cloudflare Pages, Netlify, Vercel, containers | — | — | — | — | **not implemented**; the [adapter interface](src/targets/index.js) is designed for them |
+| `docker` | **container image** on a separate Docker host over SSH, behind a managed nginx proxy (blue/green container switch) | HTTP from the proxy network | yes (proxy reload after `nginx -t`) | yes (image reloaded from storage, no rebuild) | implemented; e2e-tested against a real Docker daemon (docker-in-docker); single host, no HA |
+| `kubernetes` | **container image** on a Kubernetes / K3s cluster: per-release `Deployment`, live `Service` selector switch, image pushed to your registry and pinned by digest | API-server service proxy | yes (one `Service` apply) | yes | implemented; **verified only against a fake API server in unit tests, not a real cluster** |
+| object storage + CDN, Cloudflare Pages, Netlify, Vercel | — | — | — | — | **not implemented**; the [adapter interface](src/targets/index.ts) is designed for them |
+
+A **build strategy** (how it is built) is separate from the target (where it
+runs): `static` (files), `node` (a Node API without a Dockerfile: ShipFlow
+generates the image) and `dockerfile` (your own Dockerfile). Detection rules,
+examples and the image-build isolation trade-off (**off by default**) are in
+[docs/configuration.md](docs/configuration.md#build-strategies-and-detection)
+and [docs/self-hosting.md](docs/self-hosting.md#container-deployments-docker-and-kubernetes-targets).
+Working examples: [`examples/`](examples/).
 
 Artifact storage is separate from the target: `local` (a Docker volume, the
 default) or any S3-compatible bucket.
@@ -147,8 +158,8 @@ IAM permissions, every question, cleanup details and limitations:
 | PREPARE | shallow clone of the branch, PR ref or commit (no credentials in git's environment); source snapshot stored | nothing changed |
 | BUILD | new sandbox container. Install via lockfile (`npm ci`, `pnpm --frozen-lockfile`, `yarn --frozen-lockfile`) through the registry-only egress proxy. Then **all networking removed** and the build runs. | nothing changed |
 | TEST | the test script or configured command, no network. Missing tests are `SKIPPED`, never `PASSED`. | nothing changed |
-| DEPLOY | output validated (index.html exists, referenced assets exist, size limits), stored immutably, sandbox destroyed. **Only then** are deploy secrets decrypted, and the candidate is transferred to the target. | live site unchanged |
-| VERIFY | candidate checked: HTTP for `shipflow`, SHA-256 of every file for `ssh` | live site unchanged |
+| DEPLOY | artifact produced and validated (static: index.html exists, referenced assets exist, size limits; image: built, digest recorded, size limit), stored immutably, sandbox destroyed. **Only then** are deploy secrets decrypted, and the candidate is transferred to the target. | live site unchanged |
+| VERIFY | candidate checked: HTTP for `shipflow`, SHA-256 of every file for `ssh`, health check of the not-yet-live container for `docker` / `kubernetes` | live site unchanged |
 | ACTIVATE | atomic switch under a per-project lock (older releases can't overwrite newer ones), then live HTTP check | switched **back** to the previous release |
 
 Releases started by pull-request webhooks run in **check** mode: PREPARE,
@@ -183,9 +194,13 @@ Details: [docs/self-hosting.md](docs/self-hosting.md#build-isolation).
 ## Tests
 
 ```bash
-pnpm test        # unit and component tests (no Docker)
+pnpm typecheck   # strict TypeScript (server + CLI)
+pnpm lint        # eslint (typescript-eslint, type-checked rules)
+pnpm build       # compile to dist/ and cli/dist/ (what production runs)
+pnpm test        # builds, then unit and component tests against the compiled code (no Docker)
 pnpm test:e2e    # full stack in Docker: API, worker, PostgreSQL, Redis, egress proxy,
-                 # S3 mock, fixture git server, and a real OpenSSH + nginx "VPS"
+                 # S3 mock, fixture git server, a real OpenSSH + nginx "VPS", and a
+                 # docker-in-docker "Docker host" (needs internet to pull node/nginx images)
 ```
 
 The e2e suite drives the real CLI. It checks:
@@ -200,12 +215,20 @@ The e2e suite drives the real CLI. It checks:
 - a wrong host key being refused, and a failed live check reverting the
   symlink;
 - host-routed projects, check mode, cancellation, and webhook signature and
-  dedupe.
+  dedupe;
+- the container journey on a real Docker daemon: Node API without a Dockerfile
+  → image → candidate health check → live → second release → rollback without
+  rebuild → a crashing release leaving the live one untouched → a Dockerfile
+  project, with runtime secrets checked for leaks.
 
 The AWS wizard has its own unit tests (fake EC2/STS, plus the real AWS SDK's request
 serialization with the network stubbed); no test or CI job creates AWS resources.
 
-GitHub Actions runs both suites on every push and pull request (`.github/workflows/ci.yml`).
+GitHub Actions runs typecheck, lint, build and both suites on every push and
+pull request (`.github/workflows/ci.yml`).
+
+Not covered by any automated test: a real Kubernetes cluster or registry, a
+containerd-image-store *target* host, and the AWS wizard against real AWS.
 
 ## npm
 
@@ -215,21 +238,27 @@ is `yaml`. The server package is `private` and is never published.
 - `npm view shipflow` belongs to another project, so the CLI is named
   `shipflow-cli`. That name was unclaimed when checked; publishing is a
   manual step.
-- `cd cli && npm pack --dry-run` lists exactly what would ship: 8 files, no
-  server code, no `.env`.
+- `cd cli && npm pack --dry-run` lists exactly what would ship (compiled
+  `dist/` and the README; no server code, no `.env`).
 
 ## Repository layout
 
+TypeScript (strict, NodeNext); production runs the compiled `dist/`.
+
 ```
-cli/                 CLI package (index.js, API client, shipflow.yml schema, prompts)
-index.js, worker.js  API + site server, and the worker
-src/pipeline.js      release stages
-src/targets/         deployment adapters (shipflow, ssh) + interface docs
-src/artifactStore.js artifact storage (local, s3)
-src/sandbox.js       build sandbox; src/egressProxy.js the registry-only proxy
-src/secrets.js       encrypted project secrets
-src/webhooks.js      GitHub webhooks
-db/schema.sql        idempotent schema
-docs/                configuration, self-hosting, technical report
-test/                unit, e2e, fixtures
+cli/                  CLI package (index.ts, API client, shipflow.yml schema, prompts); builds to cli/dist
+index.ts, worker.ts   API + site server, and the worker
+src/pipeline.ts       release stages
+src/strategies/       build strategies (static, node, dockerfile), detection, image builder
+src/artifacts.ts      artifact types (static | image)
+src/targets/          deployment adapters (shipflow, ssh, docker, kubernetes) + interface docs
+src/evidence.ts       structured release evidence + deterministic diagnosis (`shipflow diagnose`)
+src/artifactStore.ts  artifact storage (local, s3)
+src/sandbox.ts        build sandbox; src/egressProxy.ts the registry-only proxy
+src/secrets.ts        encrypted project secrets
+src/webhooks.ts       GitHub webhooks
+db/schema.sql         idempotent schema
+examples/             shipflow.yml examples (static, ssh, Node API, Dockerfile, Kubernetes)
+docs/                 configuration, self-hosting, technical report
+test/                 unit (JS, import compiled output), e2e, fixtures
 ```

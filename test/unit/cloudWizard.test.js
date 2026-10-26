@@ -5,12 +5,12 @@ import assert from "node:assert/strict";
 import fs from "fs";
 import path from "path";
 
-import { CloudError, UsageError } from "../../cli/lib/errors.js";
-import { requiredSecrets, validateProjectConfig } from "../../cli/lib/projectConfig.js";
-import { sshTarget } from "../../src/targets/ssh.js";
-import { hostKeyFingerprint } from "../../cli/lib/cloud/keys.js";
-import { formatReview, runCloudDeploy } from "../../cli/lib/cloud/wizard.js";
-import { estimateCost } from "../../cli/lib/cloud/pricing.js";
+import { CloudError, UsageError } from "../../cli/dist/lib/errors.js";
+import { requiredSecrets, validateProjectConfig } from "../../cli/dist/lib/projectConfig.js";
+import { sshTarget } from "../../dist/src/targets/ssh.js";
+import { hostKeyFingerprint } from "../../cli/dist/lib/cloud/keys.js";
+import { formatReview, runCloudDeploy } from "../../cli/dist/lib/cloud/wizard.js";
+import { estimateCost } from "../../cli/dist/lib/cloud/pricing.js";
 import {
   FAKE_CREDENTIALS,
   HAPPY_ANSWERS,
@@ -55,7 +55,7 @@ test("happy path: validated, reviewed, confirmed, provisioned, registered and de
   const { h, io, result, error } = await runDeploy({
     harness: { log, ec2 },
     answers: {
-      "Type CREATE": (question) => {
+      "Type CREATE": (_question) => {
         // Nothing may exist yet when the confirmation is requested.
         sawReviewBeforeCreate.push(CREATE_CALLS.map((name) => ec2.count(name)));
         return "CREATE";
@@ -100,7 +100,7 @@ test("happy path: validated, reviewed, confirmed, provisioned, registered and de
   assert.deepEqual(sshTarget.requiredSecrets(normalized.deployment.ssh), ["SSH_PRIVATE_KEY"]);
   assert.deepEqual(requiredSecrets(normalized), ["SSH_PRIVATE_KEY"]);
   assert.equal(sshTarget.liveUrl({ targetConfig: normalized.deployment.ssh }), `http://${PUBLIC_IP}/`);
-  assert.deepEqual(sshTarget.capabilities, { candidateVerification: "checksum", atomicActivation: true, rollback: true });
+  assert.deepEqual(sshTarget.capabilities, { artifactTypes: ["static"], candidateVerification: "checksum", atomicActivation: true, rollback: true });
 
   // The private key goes only to the encrypted secret API.
   const [project, secretName, secretValue] = h.apiCalls.find((c) => c.name === "setSecret").args;

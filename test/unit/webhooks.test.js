@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import crypto from "crypto";
 import express from "express";
 
-import { verifySignature, planForProject, createGithubWebhookHandler } from "../../src/webhooks.js";
+import { verifySignature, planForProject, createGithubWebhookHandler } from "../../dist/src/webhooks.js";
 
 const SECRET = "webhook-test-secret";
 const sign = (body) => `sha256=${crypto.createHmac("sha256", SECRET).update(body).digest("hex")}`;

@@ -272,6 +272,7 @@ Run commands in the project directory unless noted otherwise.
 | `shipflow deploy --ref <branch-or-commit>` | Deploy a specific ref supported by the server |
 | `shipflow status <release-id>` | Show one release's status |
 | `shipflow logs <release-id>` | View pipeline logs and notifications |
+| `shipflow diagnose <release-id>` | Structured evidence and a deterministic diagnosis of a failed release (no AI, no network call) |
 | `shipflow releases --project <name>` | List recent releases for a project |
 | `shipflow rollback <release-id>` | Reactivate an earlier successful release |
 | `shipflow cancel <release-id>` | Cancel a queued or running release before activation |

@@ -10,7 +10,7 @@ import {
   runScriptCommand,
   classifyTestScript,
   readPackageJson,
-} from "../../src/packageManager.js";
+} from "../../dist/src/packageManager.js";
 
 async function project(files) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "sf-pm-"));

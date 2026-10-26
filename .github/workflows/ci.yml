@@ -46,8 +46,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # There is no lint, type-check or build script in package.json, so
-      # the only quality gate is the unit suite.
+      # Quality gates: type-check, lint, build the compiled output, then the
+      # unit suite (which runs against the compiled code in dist/).
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm build
       - run: pnpm test
 
       - name: Validate compose files

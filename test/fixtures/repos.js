@@ -1,3 +1,4 @@
+import fsSync from "fs";
 import fs from "fs/promises";
 import path from "path";
 
@@ -5,6 +6,14 @@ const TEMPLATES = new URL("./templates/", import.meta.url);
 
 const fail = (marker) =>
   `console.error("intentional failure ${marker}");\nprocess.exit(1);\n`;
+
+let apiTemplate;
+
+/** The api-app server with a different version label. */
+function apiServer(version) {
+  apiTemplate ??= fsSync.readFileSync(new URL("api-app/server.js", TEMPLATES), "utf8");
+  return apiTemplate.replace('const VERSION = "v1";', `const VERSION = "${version}";`);
+}
 
 /**
  * Small controlled projects used by the tests. Each one is a template plus
@@ -16,6 +25,30 @@ export const FIXTURES = {
   "site-pnpm": { template: "pnpm-site" },
   "site-yarn": { template: "yarn-site" },
   probe: { template: "probe" },
+
+  // Node API without a Dockerfile (node strategy), three versions.
+  "api-v1": { template: "api-app" },
+  "api-v2": { template: "api-app", files: { "server.js": apiServer("v2") } },
+  // Exits right after start: the candidate must never be activated.
+  "api-crash": {
+    template: "api-app",
+    files: { "server.js": 'console.error("api crashing on purpose");\nprocess.exit(1);\n' },
+  },
+  // Same API with its own Dockerfile (dockerfile strategy).
+  "api-dockerfile": {
+    template: "api-app",
+    files: {
+      "server.js": apiServer("dockerfile"),
+      Dockerfile: [
+        "FROM node:22-alpine",
+        "WORKDIR /app",
+        "COPY package.json server.js ./",
+        "USER node",
+        'CMD ["node", "server.js"]',
+        "",
+      ].join("\n"),
+    },
+  },
 
   "build-fail": {
     template: "static-site",

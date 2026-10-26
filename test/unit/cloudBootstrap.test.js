@@ -6,9 +6,9 @@ import os from "os";
 import path from "path";
 import { execFileSync } from "child_process";
 
-import { buildUserData, parseConsoleOutput, sitePath } from "../../cli/lib/cloud/userData.js";
-import { createKeyDir, generateDeployKey, hostKeyFingerprint, wipeDir } from "../../cli/lib/cloud/keys.js";
-import { createStore } from "../../cli/lib/cloud/store.js";
+import { buildUserData, parseConsoleOutput, sitePath } from "../../cli/dist/lib/cloud/userData.js";
+import { createKeyDir, generateDeployKey, hostKeyFingerprint, wipeDir } from "../../cli/dist/lib/cloud/keys.js";
+import { createStore } from "../../cli/dist/lib/cloud/store.js";
 import { FAKE_CREDENTIALS, HOST_KEY, PUBLIC_KEY } from "./helpers/cloudHarness.js";
 
 const base = { project: "portfolio", deploymentId: "sf-0000abcd", publicKey: PUBLIC_KEY };

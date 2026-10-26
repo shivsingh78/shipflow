@@ -7,12 +7,12 @@ import path from "path";
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
 
-import { CLOUD_USAGE, parseCloudArgs, runCloud } from "../../cli/lib/cloud/commands.js";
-import { UsageError } from "../../cli/lib/errors.js";
+import { CLOUD_USAGE, parseCloudArgs, runCloud } from "../../cli/dist/lib/cloud/commands.js";
+import { UsageError } from "../../cli/dist/lib/errors.js";
 import { createFakeDeps, createFakeIo } from "./helpers/cloudHarness.js";
 
-const CLI = fileURLToPath(new URL("../../cli/index.js", import.meta.url));
-const CLOUD_DIR = fileURLToPath(new URL("../../cli/lib/cloud/", import.meta.url));
+const CLI = fileURLToPath(new URL("../../cli/dist/index.js", import.meta.url));
+const CLOUD_DIR = fileURLToPath(new URL("../../cli/dist/lib/cloud/", import.meta.url));
 
 function runCli(args, { env = {} } = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "sf-cloud-cli-"));
@@ -166,10 +166,10 @@ test("the AWS SDK is only loaded by the cloud commands, never at startup", () =>
 });
 
 test("the CLI package declares the AWS SDK dependencies and ships the cloud code", () => {
-  const pkg = JSON.parse(fs.readFileSync(path.join(path.dirname(CLI), "package.json"), "utf8"));
+  const pkg = JSON.parse(fs.readFileSync(path.join(path.dirname(CLI), "..", "package.json"), "utf8"));
 
   assert.match(pkg.dependencies["@aws-sdk/client-ec2"], /^\^3\./);
   assert.match(pkg.dependencies["@aws-sdk/client-sts"], /^\^3\./);
   assert.ok(pkg.dependencies.yaml);
-  assert.ok(pkg.files.includes("lib/"), "lib/ (including lib/cloud) is packaged");
+  assert.ok(pkg.files.includes("dist/"), "dist/ (compiled lib, including lib/cloud) is packaged");
 });

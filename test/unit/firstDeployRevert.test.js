@@ -4,11 +4,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { pool } from "../../src/db.js";
-import { revertToPrevious } from "../../src/pipeline.js";
-import { revertActivation, getActiveReleaseId } from "../../src/activation.js";
-import { shipflowTarget } from "../../src/targets/shipflow.js";
-import { sshTarget, deactivateCommand } from "../../src/targets/ssh.js";
+import { pool } from "../../dist/src/db.js";
+import { revertToPrevious } from "../../dist/src/pipeline.js";
+import { revertActivation, getActiveReleaseId } from "../../dist/src/activation.js";
+import { shipflowTarget } from "../../dist/src/targets/shipflow.js";
+import { sshTarget, deactivateCommand } from "../../dist/src/targets/ssh.js";
 
 const settings = {
   targetConfig: { path: "/srv/site" },
@@ -20,6 +20,7 @@ function recordingTarget({ failDeactivate = false } = {}) {
   const calls = [];
   return {
     calls,
+    capabilities: { artifactTypes: ["static"] },
     async activate(ctx) {
       calls.push(["activate", ctx.releaseId]);
     },

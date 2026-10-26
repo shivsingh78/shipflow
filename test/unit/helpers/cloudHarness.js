@@ -5,10 +5,10 @@ import fsp from "fs/promises";
 import os from "os";
 import path from "path";
 
-import { renderConfig } from "../../../cli/lib/configFile.js";
-import { AwsError, toAwsError } from "../../../cli/lib/cloud/aws.js";
-import { createStore } from "../../../cli/lib/cloud/store.js";
-import { createKeyDir, wipeDir } from "../../../cli/lib/cloud/keys.js";
+import { renderConfig } from "../../../cli/dist/lib/configFile.js";
+import { AwsError, toAwsError } from "../../../cli/dist/lib/cloud/aws.js";
+import { createStore } from "../../../cli/dist/lib/cloud/store.js";
+import { createKeyDir, wipeDir } from "../../../cli/dist/lib/cloud/keys.js";
 
 export const PUBLIC_KEY =
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl shipflow-test";

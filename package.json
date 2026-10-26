@@ -3,19 +3,23 @@
   "version": "1.0.0",
   "private": true,
   "description": "Self-hosted, CLI-first release and deployment automation for static sites",
-  "main": "index.js",
+  "main": "dist/index.js",
   "packageManager": "pnpm@11.5.0",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "start": "node index.js",
-    "worker": "node worker.js",
-    "dev": "nodemon --ignore output/ index.js",
-    "dev:worker": "nodemon --ignore output/ worker.js",
-    "migrate": "node src/migrate.js",
-    "test": "node --test --import ./test/unit/setup.js \"test/unit/*.test.js\"",
-    "test:e2e": "sh test/e2e/run.sh"
+    "build": "tsc -p tsconfig.json && tsc -p cli/tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p cli/tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "start": "node dist/index.js",
+    "worker": "node dist/worker.js",
+    "dev": "nodemon --watch src --watch index.ts --ext ts --ignore dist/ --exec \"pnpm build && node dist/index.js\"",
+    "dev:worker": "nodemon --watch src --watch worker.ts --ext ts --ignore dist/ --exec \"pnpm build && node dist/worker.js\"",
+    "migrate": "node dist/src/migrate.js",
+    "test": "pnpm build && node --test --import ./test/unit/setup.js \"test/unit/*.test.js\"",
+    "test:e2e": "sh test/e2e/run.sh",
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
   },
   "bin": {
     "shipflow": "./cli/index.js"
@@ -43,6 +47,14 @@
   "devDependencies": {
     "@aws-sdk/client-ec2": "^3.1073.0",
     "@aws-sdk/client-sts": "^3.1073.0",
-    "nodemon": "^3.1.14"
+    "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
+    "@types/mime-types": "^3.0.1",
+    "@types/node": "^22.20.5",
+    "@types/pg": "^8.23.1",
+    "eslint": "^10.13.0",
+    "nodemon": "^3.1.14",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.72.0"
   }
 }

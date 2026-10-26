@@ -2,8 +2,8 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 
-import { config } from "../../src/config.js";
-import { pool } from "../../src/db.js";
+import { config } from "../../dist/src/config.js";
+import { pool } from "../../dist/src/db.js";
 
 after(() => pool.end());
 

@@ -2,8 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CloudError, UsageError } from "../../cli/lib/errors.js";
-import { runCloudDeploy, runCloudDestroy, runCloudStatus } from "../../cli/lib/cloud/wizard.js";
+import { CloudError, UsageError } from "../../cli/dist/lib/errors.js";
+import { runCloudDeploy, runCloudDestroy, runCloudStatus } from "../../cli/dist/lib/cloud/wizard.js";
 import {
   FAKE_CREDENTIALS,
   HAPPY_ANSWERS,

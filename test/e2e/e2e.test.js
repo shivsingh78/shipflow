@@ -8,7 +8,7 @@ import { fileURLToPath } from "url";
 const API = process.env.SHIPFLOW_API_URL;
 const SITE = process.env.SHIPFLOW_SITE_URL;
 const TOKEN = process.env.SHIPFLOW_API_TOKEN;
-const CLI = fileURLToPath(new URL("../../cli/index.js", import.meta.url));
+const CLI = fileURLToPath(new URL("../../cli/dist/index.js", import.meta.url));
 
 const repo = (fixture) => `http://fixtures:9000/shipflow/${fixture}.git`;
 const PIPELINE_TIMEOUT = { timeout: 5 * 60 * 1000 };

@@ -142,12 +142,34 @@ shipflow secrets set SSH_PRIVATE_KEY < deploy_key      # on your workstation
 Each project gets a Docker network and a managed `nginx` proxy container that
 publishes `publishPort`. A release runs as its own container; ShipFlow starts
 the candidate (no published port), checks its health from the proxy network,
-and only then rewrites the proxy configuration and reloads it (`nginx -t`
-first). If the live check fails, the previous release is switched back; if
-nothing was live, the proxy answers 503. Runtime secrets travel in a
-temporary `0600` env file, never on a command line. The newest three
-releases' containers are kept stopped for fast rollback. Add TLS in front of
+and only then rewrites the proxy configuration, runs `nginx -t`, reloads, and
+waits until the running proxy reports the new release (a reload is
+asynchronous, so a live check could otherwise be answered by the previous
+release). The previous release keeps running until the new one passes its
+live check. If that check fails, the previous release is switched back: its
+container is started if it was stopped, or recreated from the stored image if
+it is gone, its health is verified *before* traffic returns to it, and its
+live check is repeated afterwards. If nothing was live (a first deployment),
+the proxy answers 503 and the failed container is removed. A candidate that
+was prepared but never went live (the release failed or was cancelled before
+or during activation) is removed too, but never one the proxy is serving. Runtime secrets
+travel in a temporary `0600` env file, never on a command line. After a
+release passes its live check, older releases are stopped but kept (the newest
+three, plus whatever is live, are never pruned). Add TLS in front of
 `publishPort` yourself (a load balancer, or Caddy/nginx on the host).
+
+**Proxy name resolution.** The proxy resolves the release container by name
+for each request (`resolver 127.0.0.11`, cached 5 s, with a variable
+`proxy_pass`), so a restarted or recreated container with a new IP is picked
+up automatically, nginx starts even when the release container is absent, and
+an absent or unreachable release answers `503` with `Retry-After: 5` rather
+than a raw 502. This relies on Docker's embedded DNS, which exists on the
+user-defined network ShipFlow creates for each project; it is not available on
+the default bridge network or outside Docker, so do not move the proxy off its
+project network. The client address nginx sees behind Docker's published ports may not be the
+visitor's (in the end-to-end environment a request from another container was
+not distinguishable from loopback), so applications should not trust
+`X-Real-IP` / `X-Forwarded-For` from this proxy for access control.
 
 Limits: one host is one failure domain (no high availability); the activation
 reload is graceful, but connections to the old container end when it stops.

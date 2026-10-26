@@ -50,6 +50,7 @@
 // cpu / pids limits, user from the image. A read-only root filesystem is NOT
 // forced because many applications write to unknown paths; it is a documented
 // follow-up (a future runtime option) rather than a default that breaks apps.
+import crypto from "crypto";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -84,6 +85,8 @@ const COMMAND_TIMEOUT_MS = 120_000;
 const LOAD_TIMEOUT_MS = 600_000;
 const VERIFY_WINDOW_MS = 60_000;
 const VERIFY_INTERVAL_MS = 2_000;
+const PROXY_SWITCH_WINDOW_MS = 15_000;
+const RUNNING_HEALTH_WINDOW_MS = 10_000;
 
 // ---------------------------------------------------------------------------
 // Validation and quoting
@@ -146,17 +149,78 @@ export interface Upstream {
 const UPSTREAM_MARKER = /^# shipflow-upstream: (\S+):(\d+) release=([A-Za-z0-9]{8})$/m;
 
 /**
+ * Docker's embedded DNS server. Every user-defined Docker network answers
+ * container-name lookups on this address inside each container on it, which is
+ * where the managed proxy runs (it is attached to the per-project network this
+ * target creates). It does NOT exist on the default bridge network or outside
+ * Docker, so this resolver line is only valid for this layout.
+ */
+export const DOCKER_DNS_RESOLVER = "127.0.0.11";
+
+/**
+ * Handshake: a path that answers with the release ID (or "none") the running
+ * nginx configuration serves. After a reload, nginx keeps answering from the
+ * old worker processes for a moment (and over connections they already hold),
+ * so activate() waits for this to report the new release before the switch is
+ * considered done; otherwise a live check can be served by the PREVIOUS
+ * release and pass for the wrong reason.
+ *
+ * The path contains a random token generated for each rendered config, so it
+ * is not guessable by visitors and a worker still running the old config
+ * cannot answer for the new one. An `allow 127.0.0.1; deny all` rule is kept
+ * as a second layer but is NOT relied on: behind Docker's published ports the
+ * client address nginx sees is not a reliable indicator of "inside the proxy".
+ * The value revealed is only a release ID.
+ */
+const HANDSHAKE_TOKEN = /^[a-f0-9]{16}$/;
+const HANDSHAKE_MARKER = /^# shipflow-handshake: ([a-f0-9]{16})$/m;
+
+export const handshakePath = (token: string): string => {
+  if (!HANDSHAKE_TOKEN.test(token)) throw new Error("Invalid handshake token");
+  return `__shipflow_${token}`;
+};
+
+/** The handshake token a generated config carries, or null. */
+export function parseHandshakeToken(conf: string): string | null {
+  return HANDSHAKE_MARKER.exec(conf)?.[1] ?? null;
+}
+
+function handshakeLines(token: string, releaseId: string): string[] {
+  return [
+    `# shipflow-handshake: ${token}`,
+    "server {",
+    "  listen 80 default_server;",
+    "  server_name _;",
+    `  location = /${handshakePath(token)} {`,
+    "    allow 127.0.0.1;",
+    "    deny all;",
+    "    default_type text/plain;",
+    `    return 200 "${releaseId}";`,
+    "  }",
+  ];
+}
+
+/**
  * The nginx configuration of the managed proxy: forward everything to the
  * release container, or answer 503 when there is no active release.
+ *
+ * The upstream is a *variable* with an explicit resolver, so nginx looks the
+ * container name up per request (cached for 5 seconds) instead of once at
+ * start-up/reload. That keeps the proxy working when the release container is
+ * restarted or recreated with a different IP address, lets nginx start while
+ * the upstream does not exist, and turns an absent upstream into a clean 503
+ * with Retry-After instead of a crash-looping proxy or a raw 502. Only the
+ * already-validated container name and port are interpolated.
  */
-export function renderProxyConfig(upstream: Upstream | null): string {
+export function renderProxyConfig(
+  upstream: Upstream | null,
+  token: string = crypto.randomBytes(8).toString("hex")
+): string {
   if (!upstream) {
     return [
       "# managed by ShipFlow; do not edit",
       "# shipflow-upstream: none",
-      "server {",
-      "  listen 80 default_server;",
-      "  server_name _;",
+      ...handshakeLines(token, "none"),
       "  location / {",
       "    default_type text/plain;",
       '    return 503 "No active release\\n";',
@@ -173,18 +237,26 @@ export function renderProxyConfig(upstream: Upstream | null): string {
   return [
     "# managed by ShipFlow; do not edit",
     `# shipflow-upstream: ${upstream.container}:${upstream.port} release=${upstream.releaseId}`,
-    "server {",
-    "  listen 80 default_server;",
-    "  server_name _;",
+    ...handshakeLines(token, upstream.releaseId),
     "  client_max_body_size 50m;",
+    `  resolver ${DOCKER_DNS_RESOLVER} valid=5s ipv6=off;`,
+    "  resolver_timeout 3s;",
     "  location / {",
-    `    proxy_pass http://${upstream.container}:${upstream.port};`,
+    `    set $shipflow_upstream "${upstream.container}:${upstream.port}";`,
+    "    proxy_pass http://$shipflow_upstream;",
     "    proxy_http_version 1.1;",
+    "    proxy_connect_timeout 5s;",
     "    proxy_set_header Host $host;",
     "    proxy_set_header X-Real-IP $remote_addr;",
     "    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;",
     "    proxy_set_header X-Forwarded-Proto $scheme;",
     "    proxy_read_timeout 60s;",
+    "    error_page 502 504 = @shipflow_unavailable;",
+    "  }",
+    "  location @shipflow_unavailable {",
+    "    default_type text/plain;",
+    "    add_header Retry-After 5 always;",
+    '    return 503 "Release temporarily unavailable\\n";',
     "  }",
     "}",
     "",
@@ -439,14 +511,24 @@ const defaultDeps: DockerTargetDeps = {
 // ---------------------------------------------------------------------------
 // The adapter
 
+/**
+ * Output handling rule: command output is RAW inside the target, because it is
+ * parsed (image IDs, container names, the nginx config that must be restored
+ * byte for byte) and a secret that happens to be a substring of legitimate
+ * output must not alter it. Raw text never goes into a log line, an Error
+ * message or a check detail without passing through `redact` first; `must`
+ * already does that for the errors it throws.
+ */
 interface Session {
   config: DockerTargetConfig;
-  /** Run and return the result; never throws for a non-zero exit. */
+  /** Run and return the RAW result; never throws for a non-zero exit. */
   exec(command: string, options?: RemoteExecOptions): Promise<RemoteResult>;
-  /** Run and return stdout/stderr; throws a redacted error when it fails. */
+  /** Run and return RAW stdout/stderr; throws an error whose message is redacted. */
   must(label: string, command: string, options?: RemoteExecOptions): Promise<string>;
   /** Run and ignore failure. */
   tryRun(command: string): Promise<void>;
+  /** Remove known secret values from text that is going to be shown or logged. */
+  redact(text: string): string;
   base: string;
 }
 
@@ -478,17 +560,14 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
     const remote = await deps.openRemote(ctx);
 
     try {
-      const exec: Session["exec"] = async (command, execOptions) => {
-        const result = await remote.exec(command, execOptions);
-
-        return { ...result, output: redactValues(result.output, ctx.secrets) };
-      };
+      const redact = (text: string): string => redactValues(text, ctx.secrets);
+      const exec: Session["exec"] = (command, execOptions) => remote.exec(command, execOptions);
       const must: Session["must"] = async (label, command, execOptions) => {
         const result = await exec(command, execOptions);
 
         if (result.timedOut) throw new Error(`${label} timed out`);
         if (result.exitCode !== 0) {
-          throw new Error(`${label} failed: ${explainSshFailure(result.output, ctx.targetConfig)}`);
+          throw new Error(`${label} failed: ${redact(explainSshFailure(result.output, ctx.targetConfig))}`);
         }
 
         return result.output;
@@ -510,7 +589,7 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
         base = `${home}/.shipflow/${ctx.project}`;
       }
 
-      return await work({ config: ctx.targetConfig, exec, must, tryRun, base });
+      return await work({ config: ctx.targetConfig, exec, must, tryRun, redact, base });
     } finally {
       await remote.close();
     }
@@ -529,15 +608,28 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
 
     await session.must(
       `Writing ${path.posix.basename(file)}`,
-      `umask ${mode === "private" ? "077" : "022"} && cat > ${shellQuote(temp)} && mv -f ${shellQuote(temp)} ${shellQuote(file)}`,
+      `umask ${mode === "private" ? "077" : "022"} && cat > ${shellQuote(temp)} && mv -f ${shellQuote(temp)} ${shellQuote(file)} || { rm -f ${shellQuote(temp)}; exit 1; }`,
       { stdin: { text: content } }
     );
   }
 
-  async function readActiveUpstream(session: Session): Promise<Upstream | null> {
-    const result = await session.exec(`cat ${shellQuote(`${session.base}/conf/default.conf`)}`);
+  type ProxyConf = { state: "missing" } | { state: "unreadable" } | { state: "ok"; text: string };
 
-    return result.exitCode === 0 ? parseActiveUpstream(result.output) : null;
+  /** The proxy config exactly as stored (RAW bytes; see Session). */
+  async function readProxyConfig(session: Session): Promise<ProxyConf> {
+    const file = `${session.base}/conf/default.conf`;
+
+    if ((await session.exec(`test -f ${shellQuote(file)}`)).exitCode !== 0) return { state: "missing" };
+
+    const result = await session.exec(`cat ${shellQuote(file)}`);
+
+    return result.exitCode === 0 ? { state: "ok", text: result.output } : { state: "unreadable" };
+  }
+
+  async function readActiveUpstream(session: Session): Promise<Upstream | null> {
+    const conf = await readProxyConfig(session);
+
+    return conf.state === "ok" ? parseActiveUpstream(conf.text) : null;
   }
 
   async function ensureProxy(session: Session, ctx: TargetContext<DockerTargetConfig>): Promise<void> {
@@ -603,7 +695,13 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
 
       if (listing.exitCode !== 0) return;
 
-      const live = await readActiveUpstream(session);
+      // Never prune when what is live cannot be established: it could be the
+      // release a failed deployment needs to fall back to.
+      const conf = await readProxyConfig(session);
+
+      if (conf.state === "unreadable") return;
+
+      const live = conf.state === "ok" ? parseActiveUpstream(conf.text) : null;
       const remove = selectContainersToRemove(parseReleaseContainers(listing.output, ctx.project), {
         keep: KEEP_RELEASES,
         liveReleaseId: live?.releaseId ?? null,
@@ -619,13 +717,13 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
     }
   }
 
-  async function discardCandidate(session: Session, ctx: TargetContext<DockerTargetConfig>): Promise<void> {
+  async function removeCandidateContainer(session: Session, ctx: TargetContext<DockerTargetConfig>): Promise<void> {
     await session.tryRun(docker("rm", "-f", releaseContainerName(ctx.project, ctx.releaseId)));
   }
 
   async function logTail(session: Session, name: string): Promise<string> {
     const logs = await session.exec(docker("logs", "--tail", 20, name));
-    const text = logs.output.trim().split("\n").slice(-20).join("\n").slice(-2000);
+    const text = session.redact(logs.output).trim().split("\n").slice(-20).join("\n").slice(-2000);
 
     return text ? ` Last log lines:\n${text}` : "";
   }
@@ -633,24 +731,274 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
   async function setProxyConfig(session: Session, ctx: TargetContext<DockerTargetConfig>, conf: string): Promise<void> {
     const proxy = proxyName(ctx.project);
     const file = `${session.base}/conf/default.conf`;
-    const previous = await session.exec(`cat ${shellQuote(file)}`);
+    const previous = await readProxyConfig(session);
 
     await writeRemoteFile(session, file, conf, "public");
 
+    // Restores the exact previous bytes (never redacted text).
     const restore = async (): Promise<void> => {
-      if (previous.exitCode === 0) await writeRemoteFile(session, file, previous.output, "public");
+      if (previous.state === "ok") await writeRemoteFile(session, file, previous.text, "public");
+      // No config existed before: never leave the rejected one behind; the "no active release" block is safe.
+      else if (previous.state === "missing") await writeRemoteFile(session, file, renderProxyConfig(null), "public");
     };
+
+    let reloaded = false;
 
     try {
       await session.must("Testing the proxy configuration (nginx -t)", docker("exec", proxy, "nginx", "-t"));
       await session.must("Reloading the proxy", docker("exec", proxy, "nginx", "-s", "reload"));
+      reloaded = true;
+      await waitForProxyRelease(session, ctx, parseActiveUpstream(conf)?.releaseId ?? "none", parseHandshakeToken(conf));
     } catch (error) {
       try {
         await restore();
+        // If the new configuration was already loaded, load the restored one too.
+        if (reloaded) await session.tryRun(docker("exec", proxy, "nginx", "-s", "reload"));
       } catch {
         // the original error matters more
       }
       throw error;
+    }
+  }
+
+  /**
+   * Wait until the running nginx reports the expected release on the loopback
+   * handshake path (see handshakePath): the reload has been picked up by the
+   * workers that now accept connections.
+   */
+  async function waitForProxyRelease(
+    session: Session,
+    ctx: TargetContext<DockerTargetConfig>,
+    expected: string,
+    token: string | null
+  ): Promise<void> {
+    if (!token) throw new Error("The generated proxy configuration carries no handshake token");
+
+    const proxy = proxyName(ctx.project);
+    const deadline = deps.now() + PROXY_SWITCH_WINDOW_MS;
+
+    for (;;) {
+      const probe = await session.exec(
+        `${docker("exec", proxy, "wget", "-q", "-O", "-", "-T", 3, `http://127.0.0.1/${handshakePath(token)}`)} 2>/dev/null`
+      );
+
+      if (probe.exitCode === 0 && probe.output.trim() === expected) return;
+
+      if (deps.now() >= deadline) {
+        throw new Error(
+          `The proxy did not start serving release ${expected} within ${PROXY_SWITCH_WINDOW_MS / 1000}s of the reload`
+        );
+      }
+
+      await deps.sleep(500);
+    }
+  }
+
+  /**
+   * Put the release's container on the host: load (or reuse) its image, then
+   * start the candidate. Also used by activate() to bring back a release whose
+   * container no longer exists, so every path gets the same checks.
+   */
+  async function prepareInSession(
+    session: Session,
+    ctx: TargetContext<DockerTargetConfig>
+  ): Promise<{ detail: string }> {
+    const { artifact, runtime } = imageOf(ctx);
+    const { project, releaseId } = ctx;
+    const name = releaseContainerName(project, releaseId);
+    const tag = imageTag(project, releaseId);
+
+    await session.must("docker is not usable on the host", docker("version", "--format", "{{.Server.Version}}"));
+
+    const present = await session.exec(docker("image", "inspect", "--format", "{{.Id}}", tag));
+    let loaded = false;
+
+    if (present.exitCode !== 0 || present.output.trim() !== artifact.digest) {
+      const archive = await ctx.ensureImageArchive();
+
+      ctx.log(`Streaming the image (${artifact.sizeBytes} bytes) to ${session.config.host}`);
+      await session.must("docker load", docker("load"), { stdin: { file: archive }, timeoutMs: LOAD_TIMEOUT_MS });
+
+      const id = (
+        await session.must("Inspecting the loaded image", docker("image", "inspect", "--format", "{{.Id}}", artifact.digest))
+      ).trim();
+
+      if (id !== artifact.digest) {
+        throw new Error(
+        `Loaded image ${session.redact(id)} does not match the built image ${artifact.digest}; refusing to deploy it`
+      );
+      }
+
+      await session.must("Tagging the image", docker("tag", artifact.digest, tag));
+      // The archive also carries the worker's temporary build tag; drop it here.
+      await session.tryRun(
+        `${docker("image", "inspect", "-f", "{{range .RepoTags}}{{println .}}{{end}}", artifact.digest)} | grep '^shipflow-build/' | xargs -r docker rmi`
+      );
+      loaded = true;
+    }
+
+    await pruneOldReleases(session, ctx);
+    await ensureProxy(session, ctx);
+
+    // Preparing the release that is already live must not recreate (and so
+    // briefly remove) its container.
+    if ((await readActiveUpstream(session))?.releaseId === releaseId) {
+      const running = await session.exec(docker("inspect", "-f", "{{.State.Running}}", name));
+
+      if (running.exitCode === 0 && running.output.trim().startsWith("true")) {
+        return { detail: `${name} is already the live release and is running` };
+      }
+    }
+
+    const envFile = `${session.base}/private/env-${releaseId}`;
+    const network = networkName(project);
+
+    await removeCandidateContainer(session, ctx);
+
+    try {
+      await writeRemoteFile(session, envFile, buildEnvFile(runtime, ctx.secrets), "private");
+      await session.must(
+        "Starting the candidate container",
+        docker(
+          "run", "-d", "--name", name, "--network", network,
+          "--restart", "unless-stopped",
+          "--cap-drop", "ALL",
+          "--security-opt", "no-new-privileges",
+          "--memory", LIMITS.memory, "--cpus", LIMITS.cpus, "--pids-limit", LIMITS.pids,
+          "--label", `shipflow.project=${project}`,
+          "--label", `shipflow.release=${releaseId}`,
+          "--label", "shipflow.role=release",
+          "--label", `shipflow.image=${artifact.digest}`,
+          "--env-file", envFile,
+          tag
+        )
+      );
+    } catch (error) {
+      await removeCandidateContainer(session, ctx);
+      throw error;
+    } finally {
+      await session.tryRun(`rm -f ${shellQuote(envFile)} ${shellQuote(`${envFile}.tmp`)}`);
+    }
+
+    return {
+      detail: `${loaded ? "loaded" : "reused"} image ${artifact.digest.slice(0, 19)}, started ${name} (no host port published)`,
+    };
+  }
+
+  /**
+   * Wait until the release's container runs the expected image, stays up, and
+   * answers the verification path (checked from the proxy container, so no
+   * host port is needed). Throws with redacted log lines otherwise. It never
+   * removes the container: callers decide (a failed candidate is discarded, a
+   * restored previous release is left in place).
+   */
+  async function waitHealthy(
+    session: Session,
+    ctx: TargetContext<DockerTargetConfig>,
+    windowMs: number
+  ): Promise<{ detail: string }> {
+    const { artifact } = imageOf(ctx);
+    const { project, releaseId, verification } = ctx;
+    const name = releaseContainerName(project, releaseId);
+    const proxy = proxyName(project);
+    const url = `http://${name}:${artifact.port}${verification.path}`;
+    const deadline = deps.now() + windowMs;
+
+    for (;;) {
+      const state = await session.exec(
+        docker("inspect", "-f", "{{.Image}}|{{.State.Running}}|{{.State.Restarting}}|{{.RestartCount}}", name)
+      );
+      const [image, running, restarting, restarts] = state.output.trim().split("|");
+
+      if (state.exitCode !== 0) throw new Error(`Candidate container ${name} does not exist`);
+      if (image !== artifact.digest) {
+        throw new Error(`Container ${name} runs image ${session.redact(String(image))}, expected ${artifact.digest}`);
+      }
+      if (running !== "true" || restarting === "true" || Number(restarts) > 0) {
+        throw new Error(
+          `Container ${name} is not staying up (running=${String(running)}, restarts=${String(restarts)}).${await logTail(session, name)}`
+        );
+      }
+
+      const probe = await session.exec(
+        `${docker("exec", proxy, "wget", "-S", "-q", "-O", "/dev/null", "-T", 5, url)} 2>&1`
+      );
+      const status = parseWgetStatus(probe.output);
+
+      if (status === verification.expectStatus) {
+        return { detail: `${verification.path} returned HTTP ${status} inside the Docker network` };
+      }
+
+      if (deps.now() >= deadline) {
+        throw new Error(
+          `Candidate did not answer ${verification.path} with HTTP ${verification.expectStatus} within ${windowMs / 1000}s (last: ${status === null ? "no HTTP response" : `HTTP ${status}`}).${await logTail(session, name)}`
+        );
+      }
+
+      await deps.sleep(VERIFY_INTERVAL_MS);
+    }
+  }
+
+  /**
+   * Make sure the release's container is running and healthy before traffic is
+   * pointed at it. Normally it already is (just prepared and verified). When a
+   * previous release is being restored after a failed deployment its container
+   * may be stopped (a newer release superseded it) or gone: start it, or
+   * recreate it from the stored image, and verify its health first.
+   */
+  async function ensureRunning(session: Session, ctx: TargetContext<DockerTargetConfig>): Promise<void> {
+    const name = releaseContainerName(ctx.project, ctx.releaseId);
+    const state = await session.exec(docker("inspect", "-f", "{{.State.Running}}", name));
+
+    if (state.exitCode === 0 && state.output.trim().startsWith("true")) {
+      // Running is not the same as healthy (a restored release may have been up for a long time).
+      await waitHealthy(session, ctx, RUNNING_HEALTH_WINDOW_MS);
+      return;
+    }
+
+    if (state.exitCode === 0) {
+      ctx.log(`Container ${name} is stopped; starting it and checking its health before switching traffic`);
+      await session.must("Starting the stopped container", docker("start", name));
+    } else {
+      ctx.log(`Container ${name} no longer exists; recreating it from the stored image`);
+      await prepareInSession(session, ctx);
+    }
+
+    await waitHealthy(session, ctx, VERIFY_WINDOW_MS);
+  }
+
+  /**
+   * After a release has been verified live, stop (keep) the other running
+   * releases of the project. Done only now, and only while the proxy still
+   * serves THIS release, so a failed live check can fall back to a previous
+   * release that is still running, and an older deployment can never stop the
+   * release a newer one made live.
+   */
+  async function stopSupersededReleases(session: Session, ctx: TargetContext<DockerTargetConfig>): Promise<void> {
+    const { project, releaseId } = ctx;
+    const name = releaseContainerName(project, releaseId);
+
+    try {
+      if ((await readActiveUpstream(session))?.releaseId !== releaseId) return;
+
+      const running = await session.exec(
+        docker(
+          "ps",
+          "--filter", `label=shipflow.project=${project}`,
+          "--filter", "label=shipflow.role=release",
+          "--format", "{{.Names}}"
+        )
+      );
+
+      for (const line of running.output.split("\n")) {
+        const other = line.trim();
+
+        if (other && other !== name && other.startsWith(`shipflow-${project}-`) && CONTAINER_NAME.test(other)) {
+          await session.tryRun(docker("stop", "-t", 10, other));
+        }
+      }
+    } catch {
+      // old containers lingering is harmless
     }
   }
 
@@ -662,6 +1010,7 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
       candidateVerification: "http",
       atomicActivation: true,
       rollback: true,
+      verifyAfterRevert: true,
     },
 
     requiredSecrets: (config) => [config.privateKeySecret],
@@ -682,7 +1031,7 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
             checks.push({
               name: "docker daemon",
               ok: daemon.exitCode === 0,
-              detail: daemon.exitCode === 0 ? `server ${daemon.output.trim()}` : denied ? "not accessible to this user" : daemon.output.trim().slice(-200) || "docker is not running or not installed",
+              detail: daemon.exitCode === 0 ? `server ${session.redact(daemon.output).trim()}` : denied ? "not accessible to this user" : session.redact(daemon.output).trim().slice(-200) || "docker is not running or not installed",
             });
             checks.push({
               name: "docker permission",
@@ -721,132 +1070,28 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
     },
 
     async prepare(ctx) {
-      const { artifact, runtime } = imageOf(ctx);
-      const { project, releaseId } = ctx;
-      const name = releaseContainerName(project, releaseId);
-      const tag = imageTag(project, releaseId);
+      imageOf(ctx);
+      assertProject(ctx.project);
+      releaseContainerName(ctx.project, ctx.releaseId); // validates the release ID before any connection
 
-      return withSession(ctx, async (session) => {
-        await session.must("docker is not usable on the host", docker("version", "--format", "{{.Server.Version}}"));
-
-        const present = await session.exec(docker("image", "inspect", "--format", "{{.Id}}", tag));
-        let loaded = false;
-
-        if (present.exitCode !== 0 || present.output.trim() !== artifact.digest) {
-          const archive = await ctx.ensureImageArchive();
-
-          ctx.log(`Streaming the image (${artifact.sizeBytes} bytes) to ${session.config.host}`);
-          await session.must("docker load", docker("load"), { stdin: { file: archive }, timeoutMs: LOAD_TIMEOUT_MS });
-
-          const id = (
-            await session.must("Inspecting the loaded image", docker("image", "inspect", "--format", "{{.Id}}", artifact.digest))
-          ).trim();
-
-          if (id !== artifact.digest) {
-            throw new Error(`Loaded image ${id} does not match the built image ${artifact.digest}; refusing to deploy it`);
-          }
-
-          await session.must("Tagging the image", docker("tag", artifact.digest, tag));
-          // The archive also carries the worker's temporary build tag; drop it here.
-          await session.tryRun(
-            `${docker("image", "inspect", "-f", "{{range .RepoTags}}{{println .}}{{end}}", artifact.digest)} | grep '^shipflow-build/' | xargs -r docker rmi`
-          );
-          loaded = true;
-        }
-
-        await pruneOldReleases(session, ctx);
-        await ensureProxy(session, ctx);
-
-        const envFile = `${session.base}/private/env-${releaseId}`;
-        const network = networkName(project);
-
-        await discardCandidate(session, ctx);
-
-        try {
-          await writeRemoteFile(session, envFile, buildEnvFile(runtime, ctx.secrets), "private");
-          await session.must(
-            "Starting the candidate container",
-            docker(
-              "run", "-d", "--name", name, "--network", network,
-              "--restart", "unless-stopped",
-              "--cap-drop", "ALL",
-              "--security-opt", "no-new-privileges",
-              "--memory", LIMITS.memory, "--cpus", LIMITS.cpus, "--pids-limit", LIMITS.pids,
-              "--label", `shipflow.project=${project}`,
-              "--label", `shipflow.release=${releaseId}`,
-              "--label", "shipflow.role=release",
-              "--label", `shipflow.image=${artifact.digest}`,
-              "--env-file", envFile,
-              tag
-            )
-          );
-        } catch (error) {
-          await discardCandidate(session, ctx);
-          throw error;
-        } finally {
-          await session.tryRun(`rm -f ${shellQuote(envFile)}`);
-        }
-
-        return {
-          detail: `${loaded ? "loaded" : "reused"} image ${artifact.digest.slice(0, 19)}, started ${name} (no host port published)`,
-        };
-      });
+      return withSession(ctx, (session) => prepareInSession(session, ctx));
     },
 
     async verifyCandidate(ctx) {
-      const { artifact } = imageOf(ctx);
-      const { project, releaseId, verification } = ctx;
-      const name = releaseContainerName(project, releaseId);
-      const proxy = proxyName(project);
+      imageOf(ctx);
+      const { verification } = ctx;
 
       if (!URL_PATH.test(verification.path)) throw new Error("Invalid verification path");
 
-      return withSession(
-        ctx,
-        async (session) => {
-          const url = `http://${name}:${artifact.port}${verification.path}`;
-          const deadline = deps.now() + VERIFY_WINDOW_MS;
-
-          try {
-            for (;;) {
-              const state = await session.exec(
-                docker("inspect", "-f", "{{.Image}}|{{.State.Running}}|{{.State.Restarting}}|{{.RestartCount}}", name)
-              );
-              const [image, running, restarting, restarts] = state.output.trim().split("|");
-
-              if (state.exitCode !== 0) throw new Error(`Candidate container ${name} does not exist`);
-              if (image !== artifact.digest) {
-                throw new Error(`Container ${name} runs image ${String(image)}, expected ${artifact.digest}`);
-              }
-              if (running !== "true" || restarting === "true" || Number(restarts) > 0) {
-                throw new Error(
-                  `Container ${name} is not staying up (running=${String(running)}, restarts=${String(restarts)}).${await logTail(session, name)}`
-                );
-              }
-
-              const probe = await session.exec(
-                `${docker("exec", proxy, "wget", "-S", "-q", "-O", "/dev/null", "-T", 5, url)} 2>&1`
-              );
-              const status = parseWgetStatus(probe.output);
-
-              if (status === verification.expectStatus) {
-                return { detail: `${verification.path} returned HTTP ${status} inside the Docker network` };
-              }
-
-              if (deps.now() >= deadline) {
-                throw new Error(
-                  `Candidate did not answer ${verification.path} with HTTP ${verification.expectStatus} within ${VERIFY_WINDOW_MS / 1000}s (last: ${status === null ? "no HTTP response" : `HTTP ${status}`}).${await logTail(session, name)}`
-                );
-              }
-
-              await deps.sleep(VERIFY_INTERVAL_MS);
-            }
-          } catch (error) {
-            await discardCandidate(session, ctx);
-            throw error;
-          }
+      return withSession(ctx, async (session) => {
+        try {
+          return await waitHealthy(session, ctx, VERIFY_WINDOW_MS);
+        } catch (error) {
+          // A candidate that is not healthy never lingers (it is not live).
+          await removeCandidateContainer(session, ctx);
+          throw error;
         }
-      );
+      });
     },
 
     async activate(ctx) {
@@ -855,35 +1100,40 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
       const name = releaseContainerName(project, releaseId);
 
       await withSession(ctx, async (session) => {
-        const state = await session.exec(docker("inspect", "-f", "{{.State.Running}}", name));
-
-        if (state.exitCode !== 0 || !state.output.trim().startsWith("true")) {
-          throw new Error(`Container ${name} is not running; it cannot be activated`);
-        }
+        // The target container must be running and healthy before the proxy
+        // is pointed at it (restores a stopped or missing previous release).
+        await ensureRunning(session, ctx);
 
         await setProxyConfig(session, ctx, renderProxyConfig({ container: name, port: artifact.port, releaseId }));
+        // Other releases keep running until this one passes its live check
+        // (see verifyLive), so a failed check can fall back to them.
+      });
+    },
 
-        // Traffic has switched; stop (keep) the other running releases.
-        try {
-          const running = await session.exec(
-            docker(
-              "ps",
-              "--filter", `label=shipflow.project=${project}`,
-              "--filter", "label=shipflow.role=release",
-              "--format", "{{.Names}}"
-            )
-          );
+    /**
+     * Remove a release container that will never go live (the pipeline failed
+     * or was cancelled after the candidate was prepared). It is NEVER removed
+     * while the proxy serves it, or when what the proxy serves cannot be read:
+     * the candidate of a failed deployment can still be the only thing serving.
+     */
+    async discardCandidate(ctx) {
+      assertProject(ctx.project);
+      releaseContainerName(ctx.project, ctx.releaseId);
 
-          for (const line of running.output.split("\n")) {
-            const other = line.trim();
+      await withSession(ctx, async (session) => {
+        const conf = await readProxyConfig(session);
 
-            if (other && other !== name && other.startsWith(`shipflow-${project}-`) && CONTAINER_NAME.test(other)) {
-              await session.tryRun(docker("stop", "-t", 10, other));
-            }
-          }
-        } catch {
-          // old containers lingering is harmless
+        if (conf.state === "unreadable") {
+          ctx.log(`Leaving ${releaseContainerName(ctx.project, ctx.releaseId)} in place: cannot tell whether it is live`);
+          return;
         }
+
+        if (conf.state === "ok" && parseActiveUpstream(conf.text)?.releaseId === ctx.releaseId) return;
+
+        await removeCandidateContainer(session, ctx);
+        await session.tryRun(
+          `rm -f ${shellQuote(`${session.base}/private/env-${ctx.releaseId}`)} ${shellQuote(`${session.base}/private/env-${ctx.releaseId}.tmp`)}`
+        );
       });
     },
 
@@ -897,7 +1147,7 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
           await setProxyConfig(session, ctx, renderProxyConfig(null));
         }
 
-        await discardCandidate(session, ctx);
+        await removeCandidateContainer(session, ctx);
       });
 
       ctx.log(`Stopped serving ${releaseContainerName(project, releaseId)}`);
@@ -913,11 +1163,13 @@ export function createDockerTarget(overrides: Partial<DockerTargetDeps> = {}): D
 
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          const response = await deps.httpGet(url, { timeoutMs: 10_000 });
+          const response = await deps.httpGet(url, { timeoutMs: 10_000, freshConnection: true });
 
           if (response.status !== verification.expectStatus) {
             throw new Error(`${url} returned HTTP ${String(response.status)}, expected ${verification.expectStatus}`);
           }
+
+          await withSession(ctx, (session) => stopSupersededReleases(session, ctx)).catch(() => undefined);
 
           return { url, detail: `${url} returned HTTP ${response.status}` };
         } catch (error) {

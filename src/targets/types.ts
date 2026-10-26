@@ -65,6 +65,8 @@ export interface TargetCapabilities {
   atomicActivation: boolean;
   /** Can re-activate an earlier release. */
   rollback: boolean;
+  /** After an automatic revert, re-check the restored release with verifyLive. */
+  verifyAfterRevert?: boolean;
 }
 
 export interface TargetCheck {
@@ -99,6 +101,12 @@ export interface DeploymentTarget<C extends TargetConfig = TargetConfig> {
   activate(ctx: TargetContext<C>): Promise<void>;
   /** Stop serving ctx.releaseId when there is no earlier release to switch back to. */
   deactivate(ctx: TargetContext<C>): Promise<void>;
+  /**
+   * Optional. Remove whatever prepare() put in place for ctx.releaseId when the
+   * release will never go live (failure or cancellation after prepare). Must
+   * not touch a release that is live.
+   */
+  discardCandidate?(ctx: TargetContext<C>): Promise<void>;
   verifyLive(ctx: TargetContext<C>): Promise<TargetLiveResult>;
   liveUrl(ctx: Pick<TargetContext<C>, "targetConfig">): string | null;
 }

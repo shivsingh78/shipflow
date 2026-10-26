@@ -16,6 +16,25 @@ function apiServer(version) {
 }
 
 /**
+ * API that is healthy for the candidate check (the proxy calls it by container
+ * name, so Host starts with "shipflow-") but refuses requests that arrive
+ * through the public URL: it passes VERIFY and fails the live check.
+ */
+const LIVE_FAIL_SERVER = [
+  'import http from "node:http";',
+  "const port = Number(process.env.PORT ?? 3000);",
+  "http.createServer((req, res) => {",
+  '  if (!String(req.headers.host ?? "").startsWith("shipflow-")) {',
+  "    res.statusCode = 500;",
+  '    res.end("live check refused");',
+  "    return;",
+  "  }",
+  '  res.end("api livefail");',
+  '}).listen(port, () => console.log("api livefail listening on " + port));',
+  "",
+].join("\n");
+
+/**
  * Small controlled projects used by the tests. Each one is a template plus
  * file overrides / package.json edits.
  */
@@ -34,6 +53,8 @@ export const FIXTURES = {
     template: "api-app",
     files: { "server.js": 'console.error("api crashing on purpose");\nprocess.exit(1);\n' },
   },
+  // Passes the candidate check, fails the live check after activation.
+  "api-livefail": { template: "api-app", files: { "server.js": LIVE_FAIL_SERVER } },
   // Same API with its own Dockerfile (dockerfile strategy).
   "api-dockerfile": {
     template: "api-app",

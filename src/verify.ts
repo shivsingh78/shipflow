@@ -8,6 +8,12 @@ import { config } from "./config.js";
 export interface HttpGetOptions {
   headers?: Record<string, string>;
   timeoutMs?: number;
+  /**
+   * Open a new connection instead of reusing a pooled keep-alive one. A reused
+   * connection can still be attached to a proxy worker that is running the
+   * previous configuration right after a reload.
+   */
+  freshConnection?: boolean;
 }
 
 export interface HttpResponse {
@@ -29,13 +35,13 @@ export interface HealthCheckResult {
  */
 export function httpGet(
   url: string,
-  { headers = {}, timeoutMs = 10_000 }: HttpGetOptions = {}
+  { headers = {}, timeoutMs = 10_000, freshConnection = false }: HttpGetOptions = {}
 ): Promise<HttpResponse> {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
     const client = target.protocol === "https:" ? https : http;
 
-    const req = client.get(target, { headers, timeout: timeoutMs }, (res) => {
+    const req = client.get(target, { headers, timeout: timeoutMs, ...(freshConnection ? { agent: false } : {}) }, (res) => {
       const chunks: Buffer[] = [];
       let size = 0;
 

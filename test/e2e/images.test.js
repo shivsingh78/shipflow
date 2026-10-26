@@ -284,3 +284,213 @@ test("dockerfile strategy: the repository's own Dockerfile deploys too", TIMEOUT
   // The first project is unaffected.
   assert.equal((await body("/")).text, "api v2");
 });
+
+// ---------------------------------------------------------------------------
+// Docker-target reliability (revert after a failed live check, per-request DNS
+// in the proxy, redaction that cannot corrupt parsed output). Real Docker, real
+// nginx, real ssh; nothing mocked.
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Poll until `check` returns a truthy value; returns it, or throws with the last observation. */
+async function eventually(check, { timeoutMs = 45_000, intervalMs = 1500, what = "condition" } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  let last;
+
+  for (;;) {
+    try {
+      last = await check();
+      if (last) return last;
+    } catch (error) {
+      last = error;
+    }
+
+    if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}; last: ${last instanceof Error ? last.message : JSON.stringify(last)}`);
+    await sleep(intervalMs);
+  }
+}
+
+/** A project directory with its own proxy port; the SSH key secret is stored for it. */
+async function projectDir(name, { port, secrets = false }) {
+  const projectDirectory = path.join(work, name);
+  fs.mkdirSync(projectDirectory, { recursive: true });
+  writeConfig(projectDirectory, { name, repository: repo("api-v1"), secrets });
+
+  const config = path.join(projectDirectory, "shipflow.yml");
+  fs.writeFileSync(
+    config,
+    fs.readFileSync(config, "utf8").replace("publishPort: 8090", `publishPort: ${port}`).replace(`${BASE}/`, `http://dockerhost:${port}/`)
+  );
+  assert.equal((await cli(["secrets", "set", "SSH_PRIVATE_KEY", "--from-file", "/dhkeys/deploy_key"], { cwd: projectDirectory })).code, 0);
+
+  return {
+    dir: projectDirectory,
+    base: `http://dockerhost:${port}`,
+    repoFor(fixture) {
+      fs.writeFileSync(config, fs.readFileSync(config, "utf8").replace(/repository: .*/, `repository: ${repo(fixture)}`));
+    },
+  };
+}
+
+const fetchText = async (url) => {
+  const response = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+  return { status: response.status, text: await response.text(), headers: response.headers };
+};
+
+test("failed live check: the previous release is restored and serves again (it was left running during the check)", TIMEOUT, async () => {
+  writeConfig(dir, { name: "api-demo", repository: repo("api-livefail") });
+  const deploy = await cli(["deploy"], { cwd: dir });
+  ids.liveFail1 = releaseIdOf(deploy.stdout);
+
+  assert.equal(deploy.code, 1, deploy.all);
+
+  const { release } = (await api(`/releases/${ids.liveFail1}`)).body;
+  assert.equal(release.status, "FAILED");
+  assert.match(release.error_message, /Live check failed after activation/);
+  assert.match(release.error_message, new RegExp(`restored previous release ${ids.v2}; its live check passed`));
+
+  assert.equal((await body("/")).text, "api v2", "the original release serves traffic again");
+  assert.equal((await api("/projects/api-demo")).body.activeReleaseId, ids.v2);
+
+  const state = Object.fromEntries((await containers("api-demo")).map((c) => [c.name, c.running]));
+  assert.equal(state[`shipflow-api-demo-${ids.v2}`], true);
+  assert.equal(state[`shipflow-api-demo-${ids.liveFail1}`] ?? false, false, "the failed release does not keep running");
+  assert.doesNotMatch(messagesOf(await logsOf(ids.liveFail1)), new RegExp(SECRET_VALUE));
+});
+
+test("failed live check while the previous container is stopped: it is restarted, health-checked, and serves again", TIMEOUT, async () => {
+  const previous = `shipflow-api-demo-${ids.v2}`;
+  assert.equal((await onHost(`docker stop ${previous}`)).code, 0);
+
+  writeConfig(dir, { name: "api-demo", repository: repo("api-livefail") });
+  const deploy = await cli(["deploy"], { cwd: dir });
+  ids.liveFail2 = releaseIdOf(deploy.stdout);
+
+  assert.equal(deploy.code, 1, deploy.all);
+
+  const { release } = (await api(`/releases/${ids.liveFail2}`)).body;
+  assert.match(release.error_message, new RegExp(`restored previous release ${ids.v2}; its live check passed`));
+
+  const page = await eventually(async () => {
+    const response = await body("/");
+    return response.text === "api v2" ? response : null;
+  }, { what: "the restored v2 to serve" });
+  assert.equal(page.status, 200);
+
+  const state = Object.fromEntries((await containers("api-demo")).map((c) => [c.name, c.running]));
+  assert.equal(state[previous], true, "the stopped container was started again");
+  assert.match(messagesOf(await logsOf(ids.liveFail2)), /Container .* is stopped; starting it and checking its health/);
+  assert.equal((await api("/projects/api-demo")).body.activeReleaseId, ids.v2);
+});
+
+test("first deployment failing its live check is taken offline: clean 503, no container, no live release", TIMEOUT, async () => {
+  const first = await projectDir("api-first", { port: 8092 });
+  first.repoFor("api-livefail");
+
+  const deploy = await cli(["deploy"], { cwd: first.dir });
+  const releaseId = releaseIdOf(deploy.stdout);
+
+  assert.equal(deploy.code, 1, deploy.all);
+
+  const { release } = (await api(`/releases/${releaseId}`)).body;
+  assert.match(release.error_message, /no earlier release existed, so \w{8} was taken offline/);
+
+  const page = await fetchText(`${first.base}/`);
+  assert.equal(page.status, 503);
+  assert.match(page.text, /No active release/);
+  assert.deepEqual(await containers("api-first"), [], "the failed candidate was removed");
+  assert.equal((await api("/projects/api-first")).body.activeReleaseId ?? null, null);
+});
+
+test("proxy DNS: a live container restarted with a different IP is served again, and an absent upstream is a clean 503", TIMEOUT, async () => {
+  const live = `shipflow-api-demo-${ids.v2}`;
+  const network = "shipflow-api-demo";
+  const ipOf = async (name) =>
+    (await onHost(`docker inspect -f '{{(index .NetworkSettings.Networks "${network}").IPAddress}}' ${name}`)).stdout.trim();
+
+  // The generated config is valid for the real nginx and uses the embedded resolver.
+  const proxy = `${network}-proxy`;
+  assert.equal((await onHost(`docker exec ${proxy} nginx -t`)).code, 0);
+  const conf = (await onHost("cat ~/.shipflow/api-demo/conf/default.conf")).stdout;
+  assert.match(conf, /resolver 127\.0\.0\.11 valid=5s/);
+  assert.match(conf, /proxy_pass http:\/\/\$shipflow_upstream;/);
+  assert.equal((await body("/")).text, "api v2");
+
+  // The activation handshake: a per-config unguessable path answered by the running nginx.
+  const token = /# shipflow-handshake: ([a-f0-9]{16})/.exec(conf)?.[1];
+  assert.ok(token, "the generated config carries a handshake token");
+  assert.equal((await onHost(`docker exec ${proxy} wget -q -O - http://127.0.0.1/__shipflow_${token}`)).stdout.trim(), ids.v2);
+  assert.notEqual((await fetchText(`${BASE}/__shipflow_release`)).text, ids.v2, "no fixed path reveals the release");
+
+  // Recreate the upstream with a different address: free the IP, let another
+  // container take it, then start the release again.
+  const oldIp = await ipOf(live);
+  assert.match(oldIp, /^\d+\.\d+\.\d+\.\d+$/);
+  assert.equal((await onHost(`docker stop ${live}`)).code, 0);
+
+  const image = (await onHost(`docker inspect -f '{{.Config.Image}}' ${live}`)).stdout.trim();
+  const squatters = [];
+
+  try {
+    for (let i = 0; i < 4; i += 1) {
+      const name = `ip-squatter-${i}`;
+      const started = await onHost(`docker run -d --name ${name} --network ${network} --entrypoint sleep ${image} 600`);
+      assert.equal(started.code, 0, started.all);
+      squatters.push(name);
+      if ((await ipOf(name)) === oldIp) break;
+    }
+
+    // Absent upstream: nginx stays up and answers 503 with Retry-After.
+    const absent = await eventually(async () => {
+      const response = await fetchText(`${BASE}/`);
+      return response.status === 503 ? response : null;
+    }, { what: "a 503 while the upstream is stopped" });
+    assert.match(absent.text, /Release temporarily unavailable/);
+    assert.equal(absent.headers.get("retry-after"), "5");
+
+    // ...and the proxy itself survives a restart with the upstream missing
+    // (a name resolved only at start-up would make nginx refuse to start).
+    assert.equal((await onHost(`docker restart ${proxy}`)).code, 0);
+    const restarted = await eventually(async () => {
+      const response = await fetchText(`${BASE}/`).catch(() => null);
+      return response?.status === 503 ? response : null;
+    }, { what: "the restarted proxy to answer 503" });
+    assert.match(restarted.text, /Release temporarily unavailable/);
+    const state = (await onHost(`docker inspect -f '{{.State.Running}}|{{.State.Restarting}}' ${proxy}`)).stdout.trim();
+    assert.equal(state, "true|false", "the proxy is up, not crash-looping");
+
+    // Start the release again: it gets a different IP than the one the proxy first knew.
+    assert.equal((await onHost(`docker start ${live}`)).code, 0);
+    const newIp = await ipOf(live);
+    assert.notEqual(newIp, oldIp, "precondition: the recreated upstream has a new address");
+
+    const served = await eventually(async () => {
+      const response = await fetchText(`${BASE}/`).catch(() => null);
+      return response?.status === 200 && response.text === "api v2" ? response : null;
+    }, { timeoutMs: 60_000, what: "the proxy to follow the new IP" });
+    assert.equal(served.text, "api v2");
+  } finally {
+    for (const name of squatters) await onHost(`docker rm -f ${name}`);
+    await onHost(`docker start ${live}`);
+  }
+});
+
+test("a runtime secret that is a substring of docker output cannot corrupt parsing (redaction is for reports only)", TIMEOUT, async () => {
+  const redact = await projectDir("api-redact", { port: 8093, secrets: true });
+  const secretFile = path.join(work, "redact-token");
+  // Fragments of what the target parses: "true" (inspect), "sha256" (image IDs), "shipflow" (container names).
+  fs.writeFileSync(secretFile, "true");
+  assert.equal((await cli(["secrets", "set", "API_TOKEN", "--from-file", secretFile], { cwd: redact.dir })).code, 0);
+
+  const deploy = await cli(["deploy"], { cwd: redact.dir });
+  assert.equal(deploy.code, 0, deploy.all);
+  assert.equal((await fetchText(`${redact.base}/`)).text, "api v1");
+
+  redact.repoFor("api-v2");
+  const second = await cli(["deploy"], { cwd: redact.dir });
+  assert.equal(second.code, 0, second.all);
+  assert.equal((await fetchText(`${redact.base}/`)).text, "api v2");
+
+  const state = await containers("api-redact");
+  assert.equal(state.filter((c) => c.running).length, 1, "exactly one release runs; older ones were stopped, not lost");
+});

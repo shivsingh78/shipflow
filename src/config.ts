@@ -104,6 +104,11 @@ export const config = {
   imageBuildTimeoutMs: intFromEnv("SHIPFLOW_IMAGE_BUILD_TIMEOUT_MS", 900_000),
   maxImageBytes: intFromEnv("SHIPFLOW_MAX_IMAGE_BYTES", 1024 * 1024 * 1024),
 
+  // Web dashboard (ui/dist) served by the API under /ui. SHIPFLOW_UI=off disables it;
+  // SHIPFLOW_UI_DIR overrides where the built files are.
+  dashboardDisabled: process.env.SHIPFLOW_UI === "off",
+  dashboardDir: process.env.SHIPFLOW_UI_DIR || "",
+
   // Cost and disk controls.
   keepReleases: intOrZero("SHIPFLOW_KEEP_RELEASES", 10),
   logRetentionDays: intOrZero("SHIPFLOW_LOG_RETENTION_DAYS", 90),

@@ -5,7 +5,7 @@
 .github
 .vscode
 .pnpm-store
-node_modules
+**/node_modules
 output
 *.log
 artifacts
@@ -14,3 +14,4 @@ dist
 cli/dist
 *.tsbuildinfo
 *.tgz
+ui/dist

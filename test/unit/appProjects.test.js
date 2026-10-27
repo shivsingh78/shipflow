@@ -30,7 +30,7 @@ before(async () => {
     config: { apiToken: TOKEN, allowedRepoPrefixes: ["https://github.com/shiv/"], maxQueuedReleases: 5, instance: "test" },
     releases: {
       createRelease: async (r) => {
-        const row = { release_id: r.releaseId, repo_url: r.repoUrl, status: r.status, current_stage: r.currentStage, project: r.project, mode: r.mode, ref: r.ref, target: r.target, config: r.config };
+        const row = { release_id: r.releaseId, repo_url: r.repoUrl, status: r.status, current_stage: r.currentStage, project: r.project, mode: r.mode, ref: r.ref, trigger: r.trigger, target: r.target, config: r.config };
         state.releases.set(r.releaseId, row);
         return row;
       },
@@ -120,6 +120,17 @@ test("deploying a project without its secret is refused before queueing", async 
   assert.equal(response.status, 409);
   assert.match((await response.json()).message, /SSH_PRIVATE_KEY/);
   assert.equal(state.queue.length, before);
+});
+
+test("deploys record where they came from: the dashboard is labelled, anything else is the CLI", async () => {
+  state.releases.clear();
+  const rows = () => [...state.releases.values()];
+
+  await call("PUT", "/projects/vps-site/secrets/SSH_PRIVATE_KEY", { value: "k" });
+  assert.equal((await call("POST", "/deploy", { project: "vps-site", trigger: "dashboard" })).status, 202);
+  assert.equal((await call("POST", "/deploy", { project: "vps-site", trigger: "<script>" })).status, 202);
+  assert.equal((await call("POST", "/deploy", { project: "vps-site" })).status, 202);
+  assert.deepEqual(rows().map((r) => r.trigger), ["dashboard", "cli", "cli"]);
 });
 
 test("secrets are stored but never returned", async () => {

@@ -1,3 +1,6 @@
+packages:
+  - ui
+
 allowBuilds:
   esbuild: false
   msgpackr-extract: false

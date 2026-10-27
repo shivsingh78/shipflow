@@ -100,7 +100,7 @@ services:
     image: shipflow-app:latest
     pull_policy: never
     profiles: ["runner"]
-    command: ["node", "--test", "--test-concurrency=1", "test/e2e/e2e.test.js", "test/e2e/targets.test.js", "test/e2e/images.test.js"]
+    command: ["node", "--test", "--test-concurrency=1", "test/e2e/dashboard.test.js", "test/e2e/e2e.test.js", "test/e2e/targets.test.js", "test/e2e/images.test.js"]
     environment:
       SHIPFLOW_API_URL: http://api:8000
       SHIPFLOW_SITE_URL: http://api:8080

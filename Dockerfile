@@ -6,11 +6,12 @@ WORKDIR /app
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY ui/package.json ./ui/package.json
 RUN pnpm install --frozen-lockfile
 
 # .dockerignore keeps .env, local state and previous build output out
 COPY . .
-RUN pnpm build
+RUN pnpm build && pnpm build:ui
 
 
 FROM node:22-alpine
@@ -26,8 +27,10 @@ RUN apk add --no-cache git docker-cli docker-cli-buildx openssh-client
 # Enable pnpm through Corepack
 RUN corepack enable
 
-# Copy dependency files first
+# Copy dependency files first (the dashboard's packages are devDependencies:
+# only its built static files ship, below)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY ui/package.json ./ui/package.json
 
 # Install production dependencies only
 RUN pnpm install --frozen-lockfile --prod
@@ -41,6 +44,9 @@ COPY test ./test
 # Compiled server and CLI output
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/cli/dist ./cli/dist
+
+# Web dashboard (static files served by the API under /ui)
+COPY --from=build /app/ui/dist ./ui/dist
 
 EXPOSE 8000 8080
 

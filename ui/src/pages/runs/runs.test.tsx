@@ -114,7 +114,7 @@ describe("Activity, Logs and Overview", () => {
     renderPage(<OverviewPage />);
 
     expect(await screen.findByText("Successful builds")).toBeInTheDocument();
-    expect(await screen.findByText("Database")).toBeInTheDocument();
+    expect(await screen.findByText("database")).toBeInTheDocument();
 
     const attention = (await screen.findByRole("heading", { name: "Needs attention" })).closest("section")!;
 

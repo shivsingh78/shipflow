@@ -1,22 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { LogOut, Menu, Monitor, Moon, Plus, Search, Sun, UserRound } from "lucide-react";
-import { Breadcrumbs } from "./Breadcrumbs";
-import { useTheme } from "./Theme";
-import type { ThemePreference } from "./Theme";
+import { LogOut, Menu, Search, UserRound } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
-import { LinkButton } from "@/components/ui";
+import { Logo } from "./Logo";
+import { ProjectSwitcher } from "./ProjectSwitcher";
 
-const THEME_ICON = { system: Monitor, light: Sun, dark: Moon } as const;
-const NEXT: Record<ThemePreference, ThemePreference> = { system: "light", light: "dark", dark: "system" };
+const isMac = typeof navigator !== "undefined" && /mac|iphone|ipad/i.test(navigator.platform);
 
 export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () => void }) {
-  const { preference, setPreference } = useTheme();
   const { demo, signOut } = useAuth();
   const navigate = useNavigate();
   const [menu, setMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const ThemeIcon = THEME_ICON[preference];
 
   useEffect(() => {
     if (!menu) return undefined;
@@ -39,22 +34,17 @@ export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () 
       <button type="button" className="icon-btn topbar__menu" onClick={onMenu} aria-label="Open navigation">
         <Menu size={20} aria-hidden />
       </button>
-      <Breadcrumbs />
+      <Link to="/overview" className="topbar__brand" aria-label="ShipFlow overview">
+        <Logo size={32} />
+        <span className="brand-name">ShipFlow</span>
+      </Link>
+      <button type="button" className="topbar__search" onClick={onSearch} aria-label="Search releases, applications and pages">
+        <Search size={15} aria-hidden />
+        <span className="topbar__search-text">Search releases, apps, servers…</span>
+        <kbd>{isMac ? "⌘K" : "Ctrl K"}</kbd>
+      </button>
       <div className="grow" />
-      <button type="button" className="topbar__search" onClick={onSearch} aria-label="Open command menu">
-        <Search size={14} aria-hidden />
-        <span>Search…</span>
-        <kbd>Ctrl K</kbd>
-      </button>
-      <button type="button" className="icon-btn" onClick={onSearch} aria-label="Search" style={{ display: "var(--search-icon-display, none)" }}>
-        <Search size={18} aria-hidden />
-      </button>
-      <button type="button" className="icon-btn" onClick={() => setPreference(NEXT[preference])} aria-label={`Theme: ${preference}. Switch to ${NEXT[preference]}`} title={`Theme: ${preference}`}>
-        <ThemeIcon size={18} aria-hidden />
-      </button>
-      <LinkButton to="/applications/new" variant="primary" icon={<Plus size={15} aria-hidden />} className="topbar__new">
-        <span className="topbar__new-label">New application</span>
-      </LinkButton>
+      <ProjectSwitcher />
       <div className="menu" ref={menuRef}>
         <button type="button" className="avatar" onClick={() => setMenu((m) => !m)} aria-haspopup="menu" aria-expanded={menu} aria-label="Account menu">
           <UserRound size={16} aria-hidden />

@@ -65,7 +65,8 @@ describe("SettingsPage", () => {
 
     expect(await screen.findByText("demo")).toBeInTheDocument();
     expect(await screen.findByText(/sandbox docker, runtime/)).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: "System" })).toBeChecked();
+    // The dashboard is dark-only: there is no theme switch to offer.
+    expect(screen.queryByRole("radio", { name: /system|light|dark/i })).not.toBeInTheDocument();
   });
 });
 

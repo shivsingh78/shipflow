@@ -34,6 +34,20 @@ test("built assets load, and client-side routes fall back to the shell", async (
   assert.equal((await fetch(`${API}/ui/assets/missing.js`)).status, 404);
 });
 
+test("the self-hosted fonts are served from the same origin (the CSP forbids font CDNs)", async () => {
+  for (const font of ["sora-latin.woff2", "manrope-latin.woff2"]) {
+    const response = await fetch(`${API}/ui/fonts/${font}`);
+
+    assert.equal(response.status, 200, font);
+    assert.match(response.headers.get("content-type"), /font\/woff2|application\/font-woff2|octet-stream/);
+    assert.ok((await response.arrayBuffer()).byteLength > 10_000, `${font} is a real font file`);
+  }
+
+  const csp = (await fetch(`${API}/ui/`)).headers.get("content-security-policy");
+  assert.match(csp, /font-src 'self'/);
+  assert.doesNotMatch(csp, /unsafe-|\*|https?:/, "the policy was not loosened to load fonts");
+});
+
 test("the API behind the dashboard still requires the token", async () => {
   assert.equal((await fetch(`${API}/projects`)).status, 401);
   assert.equal((await fetch(`${API}/releases`, { headers: { Authorization: "Bearer wrong" } })).status, 401);

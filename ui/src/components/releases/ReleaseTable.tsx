@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Box, FileText, GitBranch } from "lucide-react";
+import { Box, Clock, FileText, GitBranch } from "lucide-react";
 import type { Release } from "@/api/types";
 import { Badge, DataTable, StatusBadge, TargetBadge } from "@/components/ui";
 import type { Column } from "@/components/ui";
@@ -25,7 +25,7 @@ const time = (r: Release) => Date.parse(r.created_at);
 function ReleaseCell({ release, showProject }: { release: Release; showProject: boolean }) {
   return (
     <div className="stack--sm" style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
-      <Link to={`/releases/${release.release_id}`} onClick={(e) => e.stopPropagation()} className="mono" style={{ fontWeight: 600 }}>
+      <Link to={`/releases/${release.release_id}`} onClick={(e) => e.stopPropagation()} className="release-id">
         {release.release_id}
       </Link>
       {showProject ? <span className="muted truncate">{release.project}</span> : null}
@@ -38,7 +38,7 @@ function StatusCell({ release }: { release: Release }) {
     <div className="row row--wrap" style={{ gap: "var(--space-1)" }}>
       <StatusBadge status={release.status} />
       {release.status === "RUNNING" ? <span className="subtle">{stageLabel(release.current_stage)}</span> : null}
-      {release.is_active ? <Badge tone="success" outline>Live</Badge> : null}
+      {release.is_active ? <Badge outline>Live</Badge> : null}
     </div>
   );
 }
@@ -46,7 +46,7 @@ function StatusCell({ release }: { release: Release }) {
 function CommitCell({ release }: { release: Release }) {
   return (
     <div className="stack--sm" style={{ display: "flex", flexDirection: "column" }}>
-      <span className="mono">{shortSha(release.commit_sha)}</span>
+      <span className="mono commit-sha">{shortSha(release.commit_sha)}</span>
       <span className="subtle row" style={{ gap: 4 }}>
         <GitBranch size={12} aria-hidden />
         <span className="truncate" style={{ maxWidth: 160 }}>{release.ref ?? "—"}</span>
@@ -82,11 +82,27 @@ function ArtifactCell({ release }: { release: Release }) {
 export function ReleaseTable({ releases, variant, showProject = true, pageSize = 15, empty, caption }: ReleaseTableProps) {
   const navigate = useNavigate();
 
-  const status: Column<Release> = { key: "status", header: "Status", cell: (r) => <StatusCell release={r} />, sort: (a, b) => a.status.localeCompare(b.status) };
-  const release: Column<Release> = { key: "release", header: showProject ? "Release / application" : "Release", cell: (r) => <ReleaseCell release={r} showProject={showProject} />, sort: (a, b) => a.project.localeCompare(b.project) || a.release_id.localeCompare(b.release_id) };
+  const status: Column<Release> = { key: "status", header: "Status", cell: (r) => <StatusCell release={r} />, ...(variant !== "compact" ? { sort: (a: Release, b: Release) => a.status.localeCompare(b.status) } : {}) };
+  const release: Column<Release> = { key: "release", header: showProject ? "Release / application" : "Release", cell: (r) => <ReleaseCell release={r} showProject={showProject} />, ...(variant !== "compact" ? { sort: (a: Release, b: Release) => a.project.localeCompare(b.project) || a.release_id.localeCompare(b.release_id) } : {}) };
   const commit: Column<Release> = { key: "commit", header: "Commit / branch", cell: (r) => <CommitCell release={r} /> };
-  const started: Column<Release> = { key: "started", header: "Started", cell: (r) => <span title={r.created_at}>{timeAgo(r.created_at)}</span>, sort: (a, b) => time(a) - time(b) };
-  const duration: Column<Release> = { key: "duration", header: "Duration", align: "right", cell: (r) => formatDuration(releaseDurationMs(r)), sort: (a, b) => (releaseDurationMs(a) ?? -1) - (releaseDurationMs(b) ?? -1) };
+  const sortable = variant !== "compact";
+  const started: Column<Release> = {
+    key: "started",
+    header: "Started",
+    cell: (r) => (
+      <span className="started" title={r.created_at}>
+        <Clock size={12} aria-hidden />
+        {timeAgo(r.created_at)}
+      </span>
+    ),
+    ...(sortable ? { sort: (a: Release, b: Release) => time(a) - time(b) } : {}),
+  };
+  const duration: Column<Release> = {
+    key: "duration",
+    header: "Duration",
+    cell: (r) => <span className="cell-strong">{formatDuration(releaseDurationMs(r))}</span>,
+    ...(sortable ? { sort: (a: Release, b: Release) => (releaseDurationMs(a) ?? -1) - (releaseDurationMs(b) ?? -1) } : {}),
+  };
 
   const columns: Column<Release>[] =
     variant === "compact"

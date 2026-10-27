@@ -1,18 +1,21 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { Rocket, RotateCcw, Square } from "lucide-react";
 import { describeError } from "@/api/errors";
 import type { Release, ReleaseMode } from "@/api/types";
 import { useApi } from "@/auth/AuthProvider";
-import { Banner, Button, ConfirmDialog, Dialog, TextField, useToast } from "@/components/ui";
+import { Banner, Button, ConfirmDialog, Dialog, SelectField, TextField, useToast } from "@/components/ui";
 import { isActiveStatus } from "@/lib/status";
 
 /** Queue a new release of an application: a real deployment, or a check run that never deploys. */
-export function DeployButton({ project, defaultRef, defaultMode = "deploy", label = "Deploy", variant = "primary", onQueued }: { project: string; defaultRef?: string; defaultMode?: ReleaseMode; label?: string; variant?: "primary" | "secondary"; onQueued?: (release: Release) => void }) {
+export function DeployButton({ project = "", projects, defaultRef, defaultMode = "deploy", label = "Deploy", variant = "primary", icon, onQueued }: { project?: string; projects?: string[]; defaultRef?: string; defaultMode?: ReleaseMode; label?: string; icon?: ReactNode; variant?: "primary" | "secondary"; onQueued?: (release: Release) => void }) {
   const api = useApi();
   const toast = useToast();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState("");
+  const target = projects ? (picked || projects[0] || "") : project;
   const [ref, setRef] = useState(defaultRef ?? "");
   const [mode, setMode] = useState<ReleaseMode>(defaultMode);
   const [busy, setBusy] = useState(false);
@@ -23,7 +26,7 @@ export function DeployButton({ project, defaultRef, defaultMode = "deploy", labe
     setError(null);
 
     try {
-      const release = await api.deploy({ project, ...(ref.trim() ? { ref: ref.trim() } : {}), mode });
+      const release = await api.deploy({ project: target, ...(ref.trim() ? { ref: ref.trim() } : {}), mode });
 
       toast.success(mode === "check" ? "Check queued" : "Deployment queued", `Release ${release.release_id} is waiting for a worker.`);
       setOpen(false);
@@ -38,13 +41,13 @@ export function DeployButton({ project, defaultRef, defaultMode = "deploy", labe
 
   return (
     <>
-      <Button variant={variant} icon={<Rocket size={14} aria-hidden />} onClick={() => { setError(null); setOpen(true); }}>
+      <Button variant={variant} icon={icon ?? <Rocket size={14} aria-hidden />} onClick={() => { setError(null); setOpen(true); }}>
         {label}
       </Button>
       <Dialog
         open={open}
         onClose={() => setOpen(false)}
-        title={`${label} ${project}`}
+        title={projects ? "Deploy an application" : `${label} ${project}`}
         footer={
           <>
             <Button onClick={() => setOpen(false)} disabled={busy}>Cancel</Button>
@@ -55,6 +58,11 @@ export function DeployButton({ project, defaultRef, defaultMode = "deploy", labe
         }
       >
         <div className="stack" style={{ display: "flex", flexDirection: "column", gap: "var(--space-4)" }}>
+          {projects && projects.length > 1 ? (
+            <SelectField label="Application" value={target} onChange={(e) => setPicked(e.target.value)}>
+              {projects.map((p) => <option key={p} value={p}>{p}</option>)}
+            </SelectField>
+          ) : null}
           <TextField label="Branch, tag or commit" value={ref} onChange={(e) => setRef(e.target.value)} placeholder={defaultRef ?? "default branch"} hint="Leave empty to use the project's configured branch." />
           <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
             <legend className="field__label" style={{ marginBottom: 6 }}>What to run</legend>

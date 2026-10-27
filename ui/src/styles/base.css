@@ -1,3 +1,20 @@
+/* Fonts are self-hosted (Sora for display, Manrope for text): the CSP only allows this origin. */
+@font-face {
+  font-family: "Manrope";
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url("/ui/fonts/manrope-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Sora";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url("/ui/fonts/sora-latin.woff2") format("woff2");
+}
+
 *,
 *::before,
 *::after {
@@ -25,9 +42,10 @@ h2,
 h3,
 h4 {
   margin: 0;
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-weight: 700;
   line-height: 1.25;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--tracking-tight);
 }
 
 p {
@@ -82,7 +100,16 @@ textarea {
 }
 
 ::selection {
-  background: var(--accent-soft);
+  background: oklch(68% 0.19 36 / 0.35);
+}
+
+/* Uppercase, widely tracked label: the reference's section/column/stat label. */
+.label-caps {
+  font-family: var(--font-display);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
 }
 
 .sr-only {

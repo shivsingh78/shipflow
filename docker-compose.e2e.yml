@@ -33,12 +33,20 @@ services:
   fixtures:
     # git http-backend lives in Alpine's git-daemon package; it is only
     # needed by this test service, not by the ShipFlow image.
+    # Some networks stall large downloads from dl-cdn.alpinelinux.org (the
+    # package index fetches, the package body never arrives). The install is
+    # therefore bounded, with a fallback to another official HTTPS mirror.
+    # Package signatures are still verified in both cases.
     build:
       context: .
       dockerfile_inline: |
         FROM shipflow-app:latest
         USER root
-        RUN apk add --no-cache git-daemon
+        RUN timeout 90 apk add --no-cache git-daemon \
+            || { echo "default Alpine mirror failed; using fallback mirror" >&2; \
+                 v=$$(cut -d. -f1,2 /etc/alpine-release); \
+                 printf 'https://mirrors.edge.kernel.org/alpine/v%s/main\nhttps://mirrors.edge.kernel.org/alpine/v%s/community\n' "$$v" "$$v" > /etc/apk/repositories; \
+                 timeout 300 apk add --no-cache git-daemon; }
         USER node
     image: shipflow-e2e-fixtures:latest
     command: ["node", "test/e2e/fixtureServer.js"]

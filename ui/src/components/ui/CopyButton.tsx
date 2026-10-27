@@ -25,7 +25,7 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
 /** Monospace value with a copy button (commit SHAs, digests, URLs). */
 export function CopyValue({ value, display }: { value: string; display?: string }) {
   return (
-    <span className="row" style={{ gap: "var(--space-1)", display: "inline-flex" }}>
+    <span className="copy-value">
       <code title={value}>{display ?? value}</code>
       <CopyButton text={value} label={`Copy ${value}`} />
     </span>

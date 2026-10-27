@@ -1,9 +1,10 @@
 import type { ReactNode } from "react";
 
-export function PageHeader({ title, description, actions }: { title: ReactNode; description?: ReactNode; actions?: ReactNode }) {
+export function PageHeader({ title, description, actions, eyebrow }: { title: ReactNode; description?: ReactNode; actions?: ReactNode; eyebrow?: ReactNode }) {
   return (
     <div className="page-header">
-      <div>
+      <div className="page-header__text">
+        {eyebrow ? <p className="page-header__eyebrow">{eyebrow}</p> : null}
         <h1 className="page-header__title">{title}</h1>
         {description ? <p className="page-header__desc">{description}</p> : null}
       </div>

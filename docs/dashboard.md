@@ -56,6 +56,19 @@ disabled state with the real alternative, not a fake control:
 - The token is a single shared admin credential. Put TLS in front of the API
   (see [self-hosting](self-hosting.md#network-exposure)) before exposing it.
 
+## Design
+
+The look follows a single design reference: a warm near-black theme with an orange primary,
+Sora headings and Manrope text. The dashboard is **dark-only** (the design defines no light
+theme), so there is no theme switch. Colours, radii and type sizes are tokens in
+[`ui/src/styles/tokens.css`](../ui/src/styles/tokens.css); every page uses them, so the
+reference's Overview layout and the other pages share one visual system. The reference only
+designs the Overview page; the other pages are built from the same tokens and components.
+
+The two fonts are **self-hosted** in `ui/public/fonts/` (SIL OFL 1.1, see the README there)
+because the Content-Security-Policy only allows this origin. Do not point the CSS at a font CDN:
+`pnpm test` fails if a stylesheet loads anything from another origin.
+
 ## Demo mode
 
 The sign-in page has **Explore with sample data**. It uses an in-memory client with

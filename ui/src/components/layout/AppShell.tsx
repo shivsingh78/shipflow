@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { FlaskConical } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { Breadcrumbs } from "./Breadcrumbs";
 import { CommandPalette } from "./CommandPalette";
 import { useAuth } from "@/auth/AuthProvider";
 
@@ -10,6 +11,7 @@ export function AppShell() {
   const { demo, signOut } = useAuth();
   const [navOpen, setNavOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const { pathname } = useLocation();
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -40,6 +42,7 @@ export function AppShell() {
         ) : null}
         <Topbar onMenu={() => setNavOpen(true)} onSearch={() => setPaletteOpen(true)} />
         <main id="main" className="content" tabIndex={-1}>
+          {pathname !== "/overview" && pathname !== "/" ? <Breadcrumbs /> : null}
           <Outlet />
         </main>
       </div>

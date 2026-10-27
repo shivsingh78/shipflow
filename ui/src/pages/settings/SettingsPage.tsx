@@ -1,37 +1,12 @@
 import { RefreshCw } from "lucide-react";
 import { Badge, Banner, Button, Card, CardBody, CardHeader, ErrorState, KeyValue, PageHeader, TableSkeleton } from "@/components/ui";
-import { useTheme } from "@/components/layout/Theme";
-import type { ThemePreference } from "@/components/layout/Theme";
 import { useReadiness, useWhoAmI } from "@/data/hooks";
 import { detailText } from "@/pages/infrastructure/model";
 import { targetLabel } from "@/lib/status";
 import "@/pages/infrastructure/infrastructure.css";
 
 const yes = (v: boolean) => (v ? "Yes" : "No");
-const THEMES: ThemePreference[] = ["system", "light", "dark"];
 
-function Appearance() {
-  const { preference, setPreference } = useTheme();
-
-  return (
-    <Card>
-      <CardHeader title="Appearance" description="Stored in this browser only." />
-      <CardBody>
-        <fieldset style={{ border: 0, padding: 0, margin: 0 }}>
-          <legend className="sr-only">Theme</legend>
-          <div className="seg">
-            {THEMES.map((t) => (
-              <label key={t}>
-                <input type="radio" name="theme" value={t} checked={preference === t} onChange={() => setPreference(t)} />
-                {t[0]?.toUpperCase()}{t.slice(1)}
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      </CardBody>
-    </Card>
-  );
-}
 
 export default function SettingsPage() {
   const who = useWhoAmI();
@@ -69,7 +44,6 @@ export default function SettingsPage() {
             )}
           </CardBody>
         </Card>
-        <Appearance />
       </div>
 
       <Card>

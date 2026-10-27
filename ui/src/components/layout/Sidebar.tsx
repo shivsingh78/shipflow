@@ -2,10 +2,22 @@ import { NavLink } from "react-router-dom";
 import { X } from "lucide-react";
 import { NAV } from "./nav";
 import { Logo } from "./Logo";
-import { useWhoAmI } from "@/data/hooks";
+import { useReadiness, useWhoAmI } from "@/data/hooks";
+
+/** Overall system state from the API's own readiness checks: nothing is assumed. */
+function systemStatus(status: "loading" | "ready" | "error", checks: Array<{ ok: boolean }> | undefined): { text: string; dot: string } {
+  if (status === "loading") return { text: "checking status…", dot: "status-dot--idle" };
+  if (!checks) return { text: "status unavailable", dot: "status-dot--idle" };
+
+  const failing = checks.filter((c) => !c.ok).length;
+
+  return failing === 0 ? { text: "all systems nominal", dot: "" } : { text: `${failing} ${failing === 1 ? "check" : "checks"} failing`, dot: "status-dot--warn" };
+}
 
 export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
   const whoami = useWhoAmI();
+  const readiness = useReadiness({ pollMs: 60_000 });
+  const state = systemStatus(readiness.status, readiness.data?.checks);
 
   return (
     <>
@@ -14,8 +26,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
         <div className="sidebar__brand">
           <Logo />
           <div className="sidebar__brand-text">
-            <span className="sidebar__name">ShipFlow</span>
-            <span className="sidebar__instance truncate">{whoami.data?.instance ?? "workspace"}</span>
+            <span className="brand-name">ShipFlow</span>
+            <span className="sidebar__instance truncate">Self-hosted{whoami.data?.instance ? ` · ${whoami.data.instance}` : ""}</span>
           </div>
           <button type="button" className="icon-btn sidebar__close" onClick={onClose} aria-label="Close navigation">
             <X size={18} aria-hidden />
@@ -31,7 +43,7 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                 if (!item.to) {
                   return (
                     <span key={item.label} className="sidebar__link is-disabled" aria-disabled="true" title={item.unavailable}>
-                      <Icon size={17} aria-hidden />
+                      <Icon size={16} aria-hidden />
                       <span className="sidebar__label">{item.label}</span>
                       <span className="sidebar__soon">Soon</span>
                     </span>
@@ -39,8 +51,8 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
                 }
 
                 return (
-                  <NavLink key={item.label} to={item.to} className={({ isActive }) => `sidebar__link${isActive ? " is-active" : ""}`} onClick={onClose} title={item.label}>
-                    <Icon size={17} aria-hidden />
+                  <NavLink key={item.label} to={item.to} className={({ isActive }) => `sidebar__link${isActive ? " is-active" : ""}`} onClick={onClose}>
+                    <Icon size={16} aria-hidden />
                     <span className="sidebar__label">{item.label}</span>
                   </NavLink>
                 );
@@ -48,8 +60,9 @@ export function Sidebar({ open, onClose }: { open: boolean; onClose: () => void 
             </div>
           ))}
         </nav>
-        <div className="sidebar__foot">
-          <span>Self-hosted</span>
+        <div className="sidebar__foot" role="status">
+          <span className={`status-dot ${state.dot}`.trim()} aria-hidden />
+          <span>{state.text}</span>
         </div>
       </aside>
     </>

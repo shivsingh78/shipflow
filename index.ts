@@ -36,6 +36,7 @@ import { getReleaseNotifications } from "./src/notify.js";
 import { errorMessage } from "./src/errors.js";
 import type { ProjectRow } from "./src/projectStore.js";
 import type { TargetCheck } from "./src/targets/types.js";
+import { resolveDashboardDir } from "./src/dashboard.js";
 
 if (config.apiToken.length < 24) {
   console.error(
@@ -152,8 +153,13 @@ const webhookHandler = config.githubWebhookSecret
     })
   : null;
 
+const dashboardDir = resolveDashboardDir(config.dashboardDir, config.dashboardDisabled);
+
+if (dashboardDir) console.log(`Dashboard available at /ui (${dashboardDir})`);
+
 const api = createApiApp({
   config,
+  dashboardDir,
   releases,
   projects,
   logs: { getReleaseLogs },

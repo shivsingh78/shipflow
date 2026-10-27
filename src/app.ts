@@ -18,6 +18,7 @@ import { errorMessage } from "./errors.js";
 import type { Config } from "./config.js";
 import type { ArtifactBody } from "./artifactStore.js";
 import { buildEvidence } from "./evidence.js";
+import { mountDashboard } from "./dashboard.js";
 import type { SecretStore } from "./secrets.js";
 import type { ReleaseRow, CreateReleaseInput, ReleaseUpdates } from "./releaseStore.js";
 import type { ProjectRow, ProjectSummaryRow } from "./projectStore.js";
@@ -106,6 +107,8 @@ export interface ApiAppDeps {
   targets?: () => TargetSummary[];
   webhookHandler?: RequestHandler | null;
   checkTarget: (project: ProjectRow) => Promise<TargetCheck[]>;
+  /** Built dashboard (ui/dist) to serve under /ui; absent or null = API only. */
+  dashboardDir?: string | null;
 }
 
 export interface SiteAppDeps {
@@ -318,6 +321,9 @@ export function createApiApp(deps: ApiAppDeps) {
       webhookHandler
     );
   }
+
+  // The dashboard shell is public static content; its API calls are not.
+  if (deps.dashboardDir) mountDashboard(app, deps.dashboardDir);
 
   app.use(express.json({ limit: "64kb" }));
   app.use(requireToken(config.apiToken));
@@ -540,6 +546,8 @@ export function createApiApp(deps: ApiAppDeps) {
       repoUrl?: string;
       ref?: string;
       mode?: string;
+      /** Where the request came from; recorded on the release for display only. */
+      trigger?: string;
     };
 
     // Legacy form: { repoUrl } deploys to the "default" project with
@@ -598,6 +606,8 @@ export function createApiApp(deps: ApiAppDeps) {
       project: project.name,
       mode: body.mode === "check" ? "check" : "deploy",
       ref,
+      // A label only (it grants nothing): anything but "dashboard" is recorded as the CLI.
+      trigger: body.trigger === "dashboard" ? "dashboard" : "cli",
       target: project.target,
       config: project.config,
     });

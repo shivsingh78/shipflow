@@ -51,6 +51,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm build
+      - run: pnpm build:ui
       - run: pnpm test
 
       - name: Validate compose files

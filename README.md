@@ -10,7 +10,8 @@ a Git repository, and ShipFlow does the rest:
 4. deploys it to a target **you** own;
 5. verifies it, then switches it live.
 
-`shipflow rollback` puts an earlier release back.
+`shipflow rollback` puts an earlier release back. A [web dashboard](docs/dashboard.md)
+at `/ui` shows applications, releases, logs and diagnostics.
 
 It uses your infrastructure: your server, optionally your S3 bucket, and your
 VPS. Nothing is provisioned or billed on your behalf.
@@ -251,6 +252,8 @@ index.ts, worker.ts   API + site server, and the worker
 src/pipeline.ts       release stages
 src/strategies/       build strategies (static, node, dockerfile), detection, image builder
 src/artifacts.ts      artifact types (static | image)
+src/dashboard.ts      serves the web dashboard (ui/dist) under /ui with a strict CSP
+ui/                   web dashboard (React + TypeScript + Vite), see docs/dashboard.md
 src/targets/          deployment adapters (shipflow, ssh, docker, kubernetes) + interface docs
 src/evidence.ts       structured release evidence + deterministic diagnosis (`shipflow diagnose`)
 src/artifactStore.ts  artifact storage (local, s3)

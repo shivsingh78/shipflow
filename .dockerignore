@@ -15,3 +15,5 @@ cli/dist
 *.tsbuildinfo
 *.tgz
 ui/dist
+repopilot-worker.env
+repopilot-keys

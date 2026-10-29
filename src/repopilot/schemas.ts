@@ -103,6 +103,10 @@ export const CreateRunRequestSchema = z.strictObject({
 export const AuthorizePrRequestSchema = z.strictObject({
   patchId: z.number().int().positive(),
   diffSha256: Sha256Schema,
+  /** The commit the patch was written against; the PR is based on it. */
+  baseCommitSha: CommitShaSchema,
+  /** The verification outcome the human saw, so approval cannot outlive it. */
+  outcome: z.enum(["improved", "unchanged", "regressed", "inconclusive"]),
   confirm: z.literal(true),
 });
 
@@ -117,10 +121,23 @@ export const FINDING_CATEGORIES = [
   "maintainability",
 ] as const;
 
+export const SEVERITIES = ["low", "medium", "high", "critical"] as const;
+
+/**
+ * "observed": the model points at code that demonstrably does the wrong
+ * thing. "hypothesis": a plausible problem it could not demonstrate. Either
+ * way it is a suggestion; nothing here is confirmed until a human reviews it.
+ */
+export const EVIDENCE_KINDS = ["observed", "hypothesis"] as const;
+
 export const FindingSchema = z
   .strictObject({
     title: z.string().trim().min(1).max(160),
     category: z.enum(FINDING_CATEGORIES),
+    severity: z.enum(SEVERITIES),
+    evidenceKind: z.enum(EVIDENCE_KINDS),
+    impact: z.string().trim().min(1).max(1000),
+    remediation: z.string().trim().min(1).max(1000),
     file: RepoPathSchema,
     lineStart: z.number().int().min(1).max(10_000_000),
     lineEnd: z.number().int().min(1).max(10_000_000),

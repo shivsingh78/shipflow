@@ -136,6 +136,42 @@ services:
         condition: service_healthy
 
 
+  # RepoPilot orchestration worker. OPT-IN: `docker compose --profile repopilot up -d`.
+  # It reads GitHub, calls the customer's AI provider and writes evidence. It
+  # NEVER runs repository code: no Docker socket, no workspaces volume, no
+  # sandbox access. Its secrets (GitHub token, credential private key) live in
+  # repopilot-worker.env, which the api service deliberately does not read.
+  repopilot-worker:
+    image: shipflow-app:latest
+    pull_policy: never
+    profiles: ["repopilot"]
+    restart: unless-stopped
+    command: ["node", "dist/repopilot-worker.js"]
+    user: node
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    env_file:
+      - path: .env
+        required: false
+      - path: repopilot-worker.env
+        required: false
+    environment:
+      <<: *app-environment
+
+    volumes:
+      - artifacts:/var/lib/shipflow/artifacts
+
+    depends_on:
+      api:
+        condition: service_healthy
+
+
   # Allows sandboxes HTTPS access to package registries only (see
   # src/egressProxy.ts). Set SHIPFLOW_EGRESS_ALLOWLIST to change the list.
   egress-proxy:

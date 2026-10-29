@@ -27,6 +27,8 @@ const ActivityPage = lazy(() => import("@/pages/activity/ActivityPage"));
 const LogsPage = lazy(() => import("@/pages/logs/LogsPage"));
 const SettingsPage = lazy(() => import("@/pages/settings/SettingsPage"));
 const AccountPage = lazy(() => import("@/pages/settings/AccountPage"));
+const RepoPilotPage = lazy(() => import("@/pages/repopilot/RepoPilotPage"));
+const RepoPilotRunPage = lazy(() => import("@/pages/repopilot/RunDetailPage"));
 const NotFoundPage = lazy(() => import("@/pages/NotFoundPage"));
 
 function Routed() {
@@ -54,6 +56,8 @@ function Routed() {
           <Route path="deployments" element={<DeploymentsPage />} />
           <Route path="build-runs" element={<BuildRunsPage />} />
           <Route path="releases/:releaseId" element={<ReleaseDetailPage />} />
+          <Route path="repopilot" element={<RepoPilotPage />} />
+          <Route path="repopilot/runs/:runId" element={<RepoPilotRunPage />} />
           <Route path="servers" element={<ServersPage />} />
           <Route path="registries" element={<RegistriesPage />} />
           <Route path="domains" element={<DomainsPage />} />

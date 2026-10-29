@@ -182,6 +182,39 @@ export function forbiddenPathReason(path: string): string | null {
   return null;
 }
 
+// ------------------------------------------------- security-sensitive code
+
+/**
+ * Words that mark security-critical code. A source patch may not touch a
+ * path with any of these as a whole word (split on - _ . and /), so an AI
+ * model never edits authentication, authorisation, secret handling, crypto,
+ * sandboxing or RepoPilot itself. Blocking is deliberately blunt: a human
+ * must write these changes.
+ */
+const SENSITIVE_WORDS: ReadonlySet<string> = new Set([
+  "auth", "authn", "authz", "authentication", "authorization", "authorisation", "oauth", "oidc", "saml", "sso",
+  "login", "logout", "signin", "signup", "session", "sessions", "jwt", "token", "tokens", "csrf",
+  "permission", "permissions", "acl", "rbac", "iam", "policy", "policies",
+  "secret", "secrets", "credential", "credentials", "password", "passwords", "passwd", "keystore", "vault",
+  "crypto", "cryptography", "encrypt", "decrypt", "encryption", "signature", "signing",
+  "sandbox", "sandboxes", "isolation", "egress", "repopilot",
+]);
+
+/** Why a SOURCE patch may not change this path, or null if it may. */
+export function sensitiveCodeReason(path: string): string | null {
+  for (const segment of path.toLowerCase().split("/")) {
+    const stem = segment.replace(/\.[a-z0-9]+$/, "");
+
+    for (const word of stem.split(/[-_.]+/)) {
+      if (SENSITIVE_WORDS.has(word)) {
+        return `"${word}" marks security-sensitive code that needs a human author`;
+      }
+    }
+  }
+
+  return null;
+}
+
 // --------------------------------------------------------------- file kind
 
 const CODE_EXTENSION = /\.(?:[cm]?[jt]s|[jt]sx)$/i;

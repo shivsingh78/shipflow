@@ -1,6 +1,7 @@
 import { ApiError } from "./errors";
 import type { ApiIssue } from "./errors";
 import type { ProjectConfig } from "@/lib/projectConfig";
+import type { RepoPilotApi, RepoPilotStatus, RpCredential, RpFinding, RpLog, RpOutcome, RpPatch, RpPullRequest, RpRepository, RpRun, RpVerification, RunDetail } from "./repopilotTypes";
 import type {
   CancelResult,
   CheckResult,
@@ -43,11 +44,15 @@ export interface ApiClient {
   deploy(request: DeployRequest): Promise<Release>;
   cancelRelease(releaseId: string): Promise<CancelResult>;
   rollback(releaseId: string): Promise<RollbackResult>;
+  /** RepoPilot: AI-assisted analysis and pull requests (see pages/repopilot). */
+  readonly repopilot: RepoPilotApi;
 }
 
 interface ErrorBody {
   message?: string;
   errors?: unknown;
+  issues?: unknown;
+  code?: string;
 }
 
 function issuesOf(errors: unknown): ApiIssue[] {
@@ -113,7 +118,7 @@ export function createHttpClient({
 
       const data = (json ?? {}) as ErrorBody;
 
-      throw new ApiError(data.message ?? `Request failed (HTTP ${response.status})`, response.status, issuesOf(data.errors));
+      throw new ApiError(data.message ?? `Request failed (HTTP ${response.status})`, response.status, issuesOf(data.errors ?? data.issues), typeof data.code === "string" ? data.code : undefined);
     }
 
     if (json === null || typeof json !== "object") {
@@ -123,8 +128,78 @@ export function createHttpClient({
     return json as T;
   }
 
+  const rp = (path: string) => `/repopilot${path}`;
+
+  const repopilot: RepoPilotApi = {
+    async status(signal) {
+      try {
+        return await request<RepoPilotStatus>("GET", rp("/status"), { signal });
+      } catch (error) {
+        // An older server without RepoPilot answers 404 for the whole prefix.
+        if (error instanceof ApiError && error.status === 404) {
+          return { enabled: false, message: "This ShipFlow server does not include RepoPilot.", problems: [], limitations: [] };
+        }
+
+        throw error;
+      }
+    },
+    async listRepositories(signal) {
+      return (await request<{ repositories: RpRepository[] }>("GET", rp("/repositories"), { signal })).repositories;
+    },
+    async authorizeRepository(repoUrl) {
+      await request("POST", rp("/repositories"), { body: { repoUrl } });
+    },
+    async revokeRepository(owner, name) {
+      await request("DELETE", rp(`/repositories/${enc(owner)}/${enc(name)}`));
+    },
+    async listCredentials(signal) {
+      return (await request<{ credentials: RpCredential[] }>("GET", rp("/credentials"), { signal })).credentials;
+    },
+    async setCredential(provider, apiKey) {
+      await request("PUT", rp(`/credentials/${enc(provider)}`), { body: { apiKey } });
+    },
+    async deleteCredential(provider) {
+      await request("DELETE", rp(`/credentials/${enc(provider)}`));
+    },
+    async listRuns(signal) {
+      return (await request<{ runs: RpRun[] }>("GET", rp("/runs?limit=100"), { signal })).runs;
+    },
+    async createRun({ repoUrl, ref }) {
+      return (await request<{ run: RpRun }>("POST", rp("/runs"), { body: { repoUrl, ...(ref ? { ref } : {}) } })).run;
+    },
+    async getRun(runId, signal) {
+      return request<RunDetail>("GET", rp(`/runs/${runId}`), { signal });
+    },
+    async cancelRun(runId) {
+      await request("POST", rp(`/runs/${runId}/cancel`), { body: {} });
+    },
+    async listFindings(runId, signal) {
+      return (await request<{ findings: RpFinding[] }>("GET", rp(`/runs/${runId}/findings`), { signal })).findings;
+    },
+    async requestPatch(runId, findingId) {
+      await request("POST", rp(`/runs/${runId}/findings/${findingId}/patch`), { body: {} });
+    },
+    async listPatches(runId, signal) {
+      return (await request<{ patches: RpPatch[] }>("GET", rp(`/runs/${runId}/patches`), { signal })).patches;
+    },
+    async getVerifications(runId, signal) {
+      const result = await request<{ verifications: RpVerification[]; outcomes: RpOutcome[] }>("GET", rp(`/runs/${runId}/verifications`), { signal });
+
+      return { verifications: result.verifications, outcomes: result.outcomes };
+    },
+    async listLogs(runId, signal) {
+      return (await request<{ logs: RpLog[] }>("GET", rp(`/runs/${runId}/logs?limit=500`), { signal })).logs;
+    },
+    async authorizePullRequest(runId, input) {
+      const result = await request<{ run: RpRun; pullRequest: RpPullRequest }>("POST", rp(`/runs/${runId}/pull-request`), { body: { ...input, confirm: true } });
+
+      return { run: result.run, pullRequest: result.pullRequest };
+    },
+  };
+
   return {
     mode: "live",
+    repopilot,
 
     async whoami(signal) {
       return request<WhoAmI & { success: boolean }>("GET", "/whoami", { signal });

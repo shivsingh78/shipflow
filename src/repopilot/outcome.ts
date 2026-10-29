@@ -39,6 +39,8 @@ export type ArmName = "baseline" | "patched" | "control";
 export type ArmState = "pass" | "fail" | "flaky" | "inconclusive";
 
 export type InconclusiveReason =
+  | "verification_unavailable"
+  | "unsupported_project"
   | "no_test_script"
   | "infra_error"
   | "timeout"
@@ -82,6 +84,8 @@ export const OUTCOME_CAVEATS: readonly string[] = [
 
 // Reason priority when several apply: the most actionable first.
 const REASON_PRIORITY: readonly InconclusiveReason[] = [
+  "verification_unavailable",
+  "unsupported_project",
   "no_test_script",
   "infra_error",
   "timeout",

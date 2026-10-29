@@ -16,6 +16,10 @@ import {
 const finding = (overrides = {}) => ({
   title: "Unchecked JSON.parse",
   category: "error-handling",
+  severity: "medium",
+  evidenceKind: "observed",
+  impact: "A malformed config crashes the process at startup.",
+  remediation: "Catch the error and report a clear message.",
   file: "src/config.js",
   lineStart: 10,
   lineEnd: 12,
@@ -98,19 +102,20 @@ test("create-run request is strict and returns the canonical repo", () => {
 
 test("PR authorization names the patch and the exact diff digest and is strict", () => {
   const digest = "a".repeat(64);
-  assert.deepEqual(
-    AuthorizePrRequestSchema.parse({ patchId: 3, diffSha256: digest, confirm: true }),
-    { patchId: 3, diffSha256: digest, confirm: true }
-  );
+  const base = { patchId: 3, diffSha256: digest, baseCommitSha: "b".repeat(40), outcome: "improved", confirm: true };
+  assert.deepEqual(AuthorizePrRequestSchema.parse(base), base);
 
   for (const bad of [
-    { patchId: 3, diffSha256: digest },
-    { patchId: 3, diffSha256: digest, confirm: false },
-    { patchId: 3, diffSha256: digest, confirm: "true" },
-    { patchId: 0, diffSha256: digest, confirm: true },
-    { patchId: 3, diffSha256: "abc", confirm: true },
-    { patchId: 3, diffSha256: digest.toUpperCase(), confirm: true },
-    { patchId: 3, diffSha256: digest, confirm: true, merge: true },
+    { ...base, confirm: undefined },
+    { ...base, confirm: false },
+    { ...base, confirm: "true" },
+    { ...base, patchId: 0 },
+    { ...base, diffSha256: "abc" },
+    { ...base, diffSha256: digest.toUpperCase() },
+    { ...base, baseCommitSha: "main" },
+    { ...base, outcome: "verified" },
+    { ...base, outcome: undefined },
+    { ...base, merge: true },
   ]) {
     assert.throws(() => AuthorizePrRequestSchema.parse(bad), undefined, JSON.stringify(bad));
   }
@@ -132,7 +137,7 @@ test("valid analysis output parses from JSON text or a decoded value", () => {
 
 test("model output with unknown fields is rejected (strict objects)", () => {
   const result = parseModelOutput(AnalysisOutputSchema, {
-    findings: [finding({ severity: "high" })],
+    findings: [finding({ priority: "high" })],
   });
   assert.equal(result.ok, false);
   assert.equal(result.code, "schema");
@@ -226,6 +231,10 @@ test("findings validate paths, line ranges, confidence and category", () => {
     finding({ confidence: 1.2 }),
     finding({ confidence: -0.1 }),
     finding({ category: "style" }),
+    finding({ severity: "urgent" }),
+    finding({ evidenceKind: "proven" }),
+    finding({ impact: "" }),
+    finding({ remediation: "x".repeat(1001) }),
     finding({ title: "   " }),
     finding({ evidence: "x".repeat(2001) }),
   ];

@@ -9,6 +9,7 @@
   "include": [
     "index.ts",
     "worker.ts",
+    "repopilot-worker.ts",
     "src/**/*.ts",
     "cli/lib/projectConfig.ts"
   ]

@@ -19,7 +19,7 @@
 
 import crypto from "crypto";
 
-import { checkRepoPath, forbiddenPathReason, isCodeFile, isTestPath } from "./paths.js";
+import { checkRepoPath, forbiddenPathReason, isCodeFile, isTestPath, sensitiveCodeReason } from "./paths.js";
 
 export type DiffRole = "source" | "test";
 
@@ -42,6 +42,7 @@ export type PatchIssueCode =
   | "absolute_path"
   | "path_traversal"
   | "forbidden_path"
+  | "sensitive_code"
   | "unexpected_file_type"
   | "test_file_in_source_patch"
   | "non_test_file_in_test_patch"
@@ -212,12 +213,35 @@ function specPath(spec: string, prefix: "a/" | "b/"): string | null {
   return spec.slice(prefix.length);
 }
 
+/** One parsed hunk, kept so a validated diff can be applied exactly. */
+export interface Hunk {
+  oldStart: number;
+  oldCount: number;
+  newStart: number;
+  newCount: number;
+  /** Body lines including their ' ', '-' or '+' marker. */
+  lines: string[];
+  /** "\\ No newline at end of file" followed a line present in the old text. */
+  oldNoEol: boolean;
+  /** ... followed a line present in the new text. */
+  newNoEol: boolean;
+}
+
+// Hunk bodies of validated files, read only by the applier. Kept out of
+// ParsedFile so that type (and the JSON stored with a patch) is unchanged.
+const HUNK_DATA = new WeakMap<ParsedFile, Hunk[]>();
+
+export function hunksOf(file: ParsedFile): readonly Hunk[] {
+  return HUNK_DATA.get(file) ?? [];
+}
+
 function parseHunks(
   lines: string[],
   start: number,
   kind: "add" | "modify",
   limits: ParseLimits
-): { added: number; removed: number; hunks: number; next: number } {
+): { added: number; removed: number; hunks: number; next: number; hunkData: Hunk[] } {
+  const hunkData: Hunk[] = [];
   let index = start;
   let added = 0;
   let removed = 0;
@@ -258,6 +282,12 @@ function parseHunks(
     let oldLeft = oldCount;
     let newLeft = newCount;
     const bodyStart = index;
+    const hunk: Hunk = { oldStart, oldCount, newStart, newCount, lines: [], oldNoEol: false, newNoEol: false };
+
+    const markNoEol = (previous: string | undefined): void => {
+      if (previous === " " || previous === "-") hunk.oldNoEol = true;
+      if (previous === " " || previous === "+") hunk.newNoEol = true;
+    };
 
     while (oldLeft > 0 || newLeft > 0) {
       const line = lines[index];
@@ -275,6 +305,7 @@ function parseHunks(
 
         oldLeft -= 1;
         newLeft -= 1;
+        hunk.lines.push(line);
       } else if (marker === "-") {
         if (oldLeft === 0) {
           throw malformed("hunk has more lines than its header declares");
@@ -282,6 +313,7 @@ function parseHunks(
 
         oldLeft -= 1;
         removed += 1;
+        hunk.lines.push(line);
       } else if (marker === "+") {
         if (newLeft === 0) {
           throw malformed("hunk has more lines than its header declares");
@@ -296,10 +328,13 @@ function parseHunks(
 
         newLeft -= 1;
         added += 1;
+        hunk.lines.push(line);
       } else if (marker === "\\") {
         if (index === bodyStart || line !== NO_NEWLINE_MARKER) {
           throw malformed("misplaced or unrecognised '\\' line");
         }
+
+        markNoEol(lines[index - 1]?.[0]);
       } else {
         throw malformed(
           line === ""
@@ -313,9 +348,11 @@ function parseHunks(
 
     // The no-newline marker may follow the final line of the hunk.
     if (lines[index] === NO_NEWLINE_MARKER) {
+      markNoEol(lines[index - 1]?.[0]);
       index += 1;
     }
 
+    hunkData.push(hunk);
     hunks += 1;
     previousOldEnd = oldStart + oldCount;
 
@@ -331,7 +368,7 @@ function parseHunks(
     throw malformed("file change has no hunks");
   }
 
-  return { added, removed, hunks, next: index };
+  return { added, removed, hunks, next: index, hunkData };
 }
 
 function parseUnifiedDiff(text: string, limits: ParseLimits): ParsedFile[] {
@@ -431,13 +468,16 @@ function parseUnifiedDiff(text: string, limits: ParseLimits): ParsedFile[] {
 
     index = hunks.next;
     changed += hunks.added + hunks.removed;
-    files.push({
+    const entry: ParsedFile = {
       path: newPath,
       kind,
       added: hunks.added,
       removed: hunks.removed,
       hunks: hunks.hunks,
-    });
+    };
+
+    HUNK_DATA.set(entry, hunks.hunkData);
+    files.push(entry);
 
     if (files.length > limits.maxFiles) {
       throw new DiffSyntaxError("too_many_files", `more than ${limits.maxFiles} files changed`);
@@ -500,6 +540,12 @@ function policyIssues(
 
   if (forbidden) {
     issues.push(issue("forbidden_path", forbidden));
+  }
+
+  const sensitive = role === "source" ? sensitiveCodeReason(file.path) : null;
+
+  if (sensitive) {
+    issues.push(issue("sensitive_code", sensitive));
   }
 
   if (!isCodeFile(file.path)) {

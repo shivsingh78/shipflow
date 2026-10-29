@@ -4,6 +4,7 @@ import type {
   NextFunction,
   Request,
   RequestHandler,
+  Router,
   Response,
 } from "express";
 import crypto from "crypto";
@@ -109,6 +110,8 @@ export interface ApiAppDeps {
   checkTarget: (project: ProjectRow) => Promise<TargetCheck[]>;
   /** Built dashboard (ui/dist) to serve under /ui; absent or null = API only. */
   dashboardDir?: string | null;
+  /** RepoPilot router (authenticated, mounted at /repopilot); absent = no routes. */
+  repopilotRouter?: Router;
 }
 
 export interface SiteAppDeps {
@@ -327,6 +330,9 @@ export function createApiApp(deps: ApiAppDeps) {
 
   app.use(express.json({ limit: "64kb" }));
   app.use(requireToken(config.apiToken));
+
+  // After the token gate, so every RepoPilot route is authenticated.
+  if (deps.repopilotRouter) app.use("/repopilot", deps.repopilotRouter);
 
   // Release IDs and project names are validated once for every route.
   app.param("releaseId", (_req, res, next, releaseId: string) => {

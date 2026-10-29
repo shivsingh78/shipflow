@@ -1,4 +1,4 @@
-import { Activity, AppWindow, Boxes, FolderKanban, Globe, Hammer, LayoutDashboard, Rocket, ScrollText, Server, Settings, UserRound, Workflow } from "lucide-react";
+import { Activity, AppWindow, Boxes, FolderKanban, Globe, Hammer, LayoutDashboard, Rocket, ScrollText, Server, Settings, ShieldCheck, UserRound, Workflow } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export interface NavItem {
@@ -23,6 +23,7 @@ export const NAV: NavGroup[] = [
       { label: "Applications", to: "/applications", icon: AppWindow },
       { label: "Deployments", to: "/deployments", icon: Rocket },
       { label: "Build Runs", to: "/build-runs", icon: Hammer },
+      { label: "RepoPilot", to: "/repopilot", icon: ShieldCheck },
     ],
   },
   {

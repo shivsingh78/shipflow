@@ -146,3 +146,7 @@ vite.config.ts.timestamp-*
 output/
 test/e2e/last-run.log
 artifacts/
+
+# RepoPilot worker-only secrets (GitHub token, credential private key)
+repopilot-worker.env
+repopilot-keys/

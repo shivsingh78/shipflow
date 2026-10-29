@@ -4,6 +4,7 @@
 // ?demo=1), shows a permanent banner, and never mixes with live responses.
 // Nothing here talks to a server, deploys anything or stores credentials.
 import { requiredSecrets } from "@/lib/projectConfig";
+import { createDemoRepoPilot } from "./demoRepopilot";
 import type { ProjectConfig } from "@/lib/projectConfig";
 import { ApiError } from "./errors";
 import type { ApiClient } from "./client";
@@ -339,6 +340,7 @@ export function createDemoClient(): ApiClient {
 
   return {
     mode: "demo",
+    repopilot: createDemoRepoPilot(),
 
     whoami: () =>
       delay<WhoAmI>({

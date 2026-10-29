@@ -7,12 +7,15 @@ export interface ApiIssue {
 export class ApiError extends Error {
   readonly status: number;
   readonly issues: ApiIssue[];
+  /** Stable machine-readable code from the server (e.g. "ai_credentials_missing"), when present. */
+  readonly code: string | undefined;
 
-  constructor(message: string, status = 0, issues: ApiIssue[] = []) {
+  constructor(message: string, status = 0, issues: ApiIssue[] = [], code?: string) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.issues = issues;
+    this.code = code;
   }
 
   get isAuth(): boolean {

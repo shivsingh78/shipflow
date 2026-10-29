@@ -1,6 +1,6 @@
 import { config } from "./src/config.js";
 import { pool } from "./src/db.js";
-import { connection, deployQueue } from "./src/queue.js";
+import { connection, bullConnection, deployQueue } from "./src/queue.js";
 import { runMigrations } from "./src/migrate.js";
 import { genrate } from "./src/genrate.js";
 import { rollbackRelease } from "./src/rollback.js";
@@ -37,6 +37,12 @@ import { errorMessage } from "./src/errors.js";
 import type { ProjectRow } from "./src/projectStore.js";
 import type { TargetCheck } from "./src/targets/types.js";
 import { resolveDashboardDir } from "./src/dashboard.js";
+import { readCapabilities } from "./src/repopilot/capabilities.js";
+import { loadRepoPilotConfig, workerSecretsLeakedInto } from "./src/repopilot/config.js";
+import { createEvidenceStore } from "./src/repopilot/evidence.js";
+import { bullEnqueue, createRepoPilotQueue } from "./src/repopilot/queue.js";
+import { createDisabledRepoPilotRouter, createRepoPilotRouter } from "./src/repopilot/routes.js";
+import { createRepoPilotStore } from "./src/repopilot/store.js";
 
 if (config.apiToken.length < 24) {
   console.error(
@@ -106,6 +112,13 @@ async function readiness(): Promise<ReadinessCheck[]> {
       restricted ? ", restricted network" : ", WARNING: unrestricted install network"
     })`;
   });
+  if (repopilotRouterEnabled) {
+    await run("repopilot workers", async () => {
+      const caps = await readCapabilities(connection, config.instance);
+      if (caps.workers === 0) throw new Error("no RepoPilot worker heartbeat in the last 30s; start the repopilot-worker service");
+      return `${caps.workers} alive (github ${caps.github ? "configured" : "NOT configured"}, sandbox ${caps.sandbox})`;
+    });
+  }
   await run("secret storage", async () => {
     if (!secretStore.enabled) throw new Error("disabled: set SHIPFLOW_SECRETS_KEY (needed for ssh targets)");
   });
@@ -153,6 +166,46 @@ const webhookHandler = config.githubWebhookSecret
     })
   : null;
 
+// RepoPilot is off unless REPOPILOT=enabled. The API holds neither the GitHub
+// token nor the credential private key; if either shows up in its
+// environment RepoPilot refuses to start here.
+const repopilotConfig = loadRepoPilotConfig();
+const leakedSecrets = workerSecretsLeakedInto();
+let repopilotRouterEnabled = false;
+let repopilotRouter;
+
+if (repopilotConfig.enabled && leakedSecrets.length > 0) {
+  console.error(
+    `RepoPilot is DISABLED: worker-only secrets are set on the API process (${leakedSecrets.join(", ")}). ` +
+      "Move them to the repopilot-worker's own env file (see docs/repopilot.md)."
+  );
+  repopilotRouter = createDisabledRepoPilotRouter({
+    problems: [...repopilotConfig.problems, `Worker-only secrets (${leakedSecrets.join(", ")}) must not be set on the API process. Remove them to enable RepoPilot.`],
+  });
+} else if (repopilotConfig.enabled) {
+  const repopilotQueue = createRepoPilotQueue(bullConnection);
+  const evidenceStore = createEvidenceStore(artifactStore);
+
+  repopilotRouterEnabled = true;
+  repopilotRouter = createRepoPilotRouter({
+    store: createRepoPilotStore(pool, { maxActiveRuns: repopilotConfig.limits.maxActiveRuns }),
+    enqueue: bullEnqueue(repopilotQueue),
+    config: repopilotConfig,
+    capabilities: () => readCapabilities(connection, config.instance),
+    artifacts: {
+      read: async (objectKey, maxBytes) => {
+        const body = await evidenceStore.get(objectKey, maxBytes);
+
+        return body ? { body, contentType: "application/octet-stream" } : null;
+      },
+    },
+    queueCounts: () => repopilotQueue.getJobCounts("waiting", "active", "delayed", "failed"),
+  });
+  console.log(`RepoPilot enabled (sandbox verification: ${repopilotConfig.sandboxMode})`);
+} else {
+  repopilotRouter = createDisabledRepoPilotRouter(repopilotConfig);
+}
+
 const dashboardDir = resolveDashboardDir(config.dashboardDir, config.dashboardDisabled);
 
 if (dashboardDir) console.log(`Dashboard available at /ui (${dashboardDir})`);
@@ -177,6 +230,7 @@ const api = createApiApp({
   targets: listTargets,
   webhookHandler,
   checkTarget,
+  repopilotRouter,
 });
 
 const site = createSiteApp({

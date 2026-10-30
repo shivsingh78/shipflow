@@ -58,14 +58,16 @@ disabled state with the real alternative, not a fake control:
 
 ## Design
 
-The look follows a single design reference: a warm near-black theme with an orange primary,
-Sora headings and Manrope text. The dashboard is **dark-only** (the design defines no light
-theme), so there is no theme switch. Colours, radii and type sizes are tokens in
-[`ui/src/styles/tokens.css`](../ui/src/styles/tokens.css); every page uses them, so the
-reference's Overview layout and the other pages share one visual system. The reference only
-designs the Overview page; the other pages are built from the same tokens and components.
+The look follows a single design reference: a cool near-white light theme and a deep blue-slate
+dark theme sharing one teal primary, with Inter for text and IBM Plex Mono for code. The theme
+is **Light, Dark or System** (default System), chosen in the top bar and kept in `localStorage`.
+`ui/public/theme-init.js` applies it before first paint so there is no flash; it is a separate
+file because the Content-Security-Policy forbids inline scripts. Colours, radii and type sizes are
+tokens in [`ui/src/styles/tokens.css`](../ui/src/styles/tokens.css) (the only place colour values
+may appear); every page uses them. Text and status colours meet WCAG AA contrast in both themes,
+which `pnpm test` checks.
 
-The two fonts are **self-hosted** in `ui/public/fonts/` (SIL OFL 1.1, see the README there)
+The fonts are **self-hosted** in `ui/public/fonts/` (SIL OFL 1.1, see the README there)
 because the Content-Security-Policy only allows this origin. Do not point the CSS at a font CDN:
 `pnpm test` fails if a stylesheet loads anything from another origin.
 

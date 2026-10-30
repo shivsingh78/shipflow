@@ -22,5 +22,11 @@ export default tseslint.config(
       "@typescript-eslint/no-misused-promises": ["error", { checksVoidReturn: { attributes: false } }],
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
     },
+  },
+  {
+    // Pre-paint theme script: plain ES5 in the browser, empty catch blocks on purpose.
+    files: ["public/theme-init.js"],
+    languageOptions: { globals: { ...globals.browser } },
+    rules: { "no-unused-vars": ["error", { caughtErrors: "none" }] },
   }
 );

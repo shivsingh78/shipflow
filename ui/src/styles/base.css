@@ -1,18 +1,35 @@
-/* Fonts are self-hosted (Sora for display, Manrope for text): the CSP only allows this origin. */
+/* Fonts are self-hosted (Inter for text, IBM Plex Mono for code and IDs): the CSP only allows this origin.
+   Licenses (SIL OFL 1.1) ship alongside the files in public/fonts. */
 @font-face {
-  font-family: "Manrope";
+  font-family: "Inter";
   font-style: normal;
-  font-weight: 200 800;
+  font-weight: 100 900;
   font-display: swap;
-  src: url("/ui/fonts/manrope-latin.woff2") format("woff2");
+  src: url("/ui/fonts/inter-latin.woff2") format("woff2");
 }
 
 @font-face {
-  font-family: "Sora";
+  font-family: "IBM Plex Mono";
   font-style: normal;
-  font-weight: 100 800;
+  font-weight: 400;
   font-display: swap;
-  src: url("/ui/fonts/sora-latin.woff2") format("woff2");
+  src: url("/ui/fonts/ibm-plex-mono-latin-400.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/ui/fonts/ibm-plex-mono-latin-500.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/ui/fonts/ibm-plex-mono-latin-600.woff2") format("woff2");
 }
 
 *,
@@ -43,7 +60,7 @@ h3,
 h4 {
   margin: 0;
   font-family: var(--font-display);
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.25;
   letter-spacing: var(--tracking-tight);
 }
@@ -100,7 +117,7 @@ textarea {
 }
 
 ::selection {
-  background: oklch(68% 0.19 36 / 0.35);
+  background: var(--accent-soft);
 }
 
 /* Uppercase, widely tracked label: the reference's section/column/stat label. */

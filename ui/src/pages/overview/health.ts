@@ -39,3 +39,37 @@ export function healthBars(releases: Release[], size = HEALTH_WINDOW, now = Date
     };
   });
 }
+
+export interface ReleaseMetrics {
+  /** Share of FINISHED releases that succeeded (0-100), or null before any finished. */
+  successRatePct: number | null;
+  errorRatePct: number | null;
+  medianDurationMs: number | null;
+  /** Releases per day across the window's span, or null with fewer than two releases. */
+  throughputPerDay: number | null;
+  finished: number;
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * Headline numbers for the Overview, derived ONLY from release records. Cancelled
+ * releases are neither a success nor a failure; queued/running ones are not finished.
+ */
+export function releaseMetrics(releases: Release[], now = Date.now()): ReleaseMetrics {
+  const finished = releases.filter((r) => r.status === "SUCCESS" || r.status === "FAILED");
+  const succeeded = finished.filter((r) => r.status === "SUCCESS").length;
+  const durations = finished.map((r) => releaseDurationMs(r, now)).filter((d): d is number => d !== null).sort((a, b) => a - b);
+  const middle = Math.floor(durations.length / 2);
+  const median = durations.length === 0 ? null : durations.length % 2 === 1 ? (durations[middle] as number) : ((durations[middle - 1] as number) + (durations[middle] as number)) / 2;
+  const times = releases.map((r) => Date.parse(r.created_at)).filter((t) => !Number.isNaN(t));
+  const spanDays = times.length >= 2 ? Math.max(1, (Math.max(...times) - Math.min(...times)) / DAY_MS) : null;
+
+  return {
+    successRatePct: finished.length === 0 ? null : Math.round((succeeded / finished.length) * 1000) / 10,
+    errorRatePct: finished.length === 0 ? null : Math.round(((finished.length - succeeded) / finished.length) * 1000) / 10,
+    medianDurationMs: median,
+    throughputPerDay: spanDays === null ? null : Math.round((releases.length / spanDays) * 10) / 10,
+    finished: finished.length,
+  };
+}

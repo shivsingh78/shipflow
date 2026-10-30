@@ -10,9 +10,11 @@ import { useAutoPoll } from "../runs/useAutoPoll";
 import { applicationsNeedingAttention } from "./attention";
 import { AttentionCard } from "./AttentionCard";
 import { DeployHealth } from "./DeployHealth";
+import { FutureCapabilities } from "./FutureCapabilities";
 import { Onboarding } from "./Onboarding";
 import { QuickDeploy } from "./QuickDeploy";
 import { ReadinessCard } from "./ReadinessCard";
+import { StatRow } from "./StatRow";
 import "../runs/runs.css";
 import "./overview.css";
 
@@ -60,31 +62,34 @@ export default function OverviewPage() {
       ) : empty ? (
         <Onboarding />
       ) : (
-        <div className="overview-grid">
-          <div className="overview-main">
-            <DeployHealth releases={list} applications={projects.data?.length} loading={loading} />
+        <div className="overview-stack">
+          <StatRow releases={list} applications={projects.data?.length} loading={loading} />
 
-            <section className="card" aria-labelledby="recent-title">
-              <header className="card__header">
-                <div>
-                  <h2 className="card__title" id="recent-title">Recent builds &amp; deployments</h2>
-                  <p className="card__sub">The latest releases across all applications</p>
-                </div>
-                <Link to="/build-runs" className="link-accent">View all <ArrowRight size={13} aria-hidden /></Link>
-              </header>
-              {loading ? (
-                <TableSkeleton rows={5} columns={5} />
-              ) : (
-                <div className="compact-releases">
-                  <ReleaseTable releases={list.slice(0, 8)} variant="compact" pageSize={8} caption="Recent builds and deployments" empty={<EmptyState title="No releases yet" description="Deploy an application to see it here." />} />
-                </div>
-              )}
-            </section>
+          <div className="overview-grid">
+            <DeployHealth releases={list} loading={loading} />
+            <ReadinessCard readiness={readiness.data} status={readiness.status} error={readiness.error} onRetry={() => void readiness.refresh()} />
           </div>
 
-          <div className="overview-side">
+          <section className="card" aria-labelledby="recent-title">
+            <header className="card__header">
+              <div>
+                <h2 className="card__title" id="recent-title">Recent releases</h2>
+                <p className="card__sub">Latest deployment activity across all applications</p>
+              </div>
+              <Link to="/pipelines" className="link-accent">View all <ArrowRight size={13} aria-hidden /></Link>
+            </header>
+            {loading ? (
+              <TableSkeleton rows={5} columns={5} />
+            ) : (
+              <div className="compact-releases">
+                <ReleaseTable releases={list.slice(0, 8)} variant="compact" pageSize={8} caption="Recent releases" empty={<EmptyState title="No releases yet" description="Deploy an application to see it here." />} />
+              </div>
+            )}
+          </section>
+
+          <div className="overview-pair">
             <AttentionCard items={attention} loading={details.status === "loading" || releases.status === "loading"} />
-            <ReadinessCard readiness={readiness.data} status={readiness.status} error={readiness.error} onRetry={() => void readiness.refresh()} />
+            <FutureCapabilities />
           </div>
         </div>
       )}

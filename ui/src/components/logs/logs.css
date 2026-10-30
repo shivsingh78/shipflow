@@ -80,7 +80,7 @@
 }
 
 .logv__line:hover {
-  background: rgb(255 255 255 / 5%);
+  background: color-mix(in oklab, var(--log-text) 6%, transparent);
 }
 
 .logv__meta {
@@ -116,12 +116,12 @@
 
 .logv__line[data-level="WARN"] .logv__lvl,
 .logv__line[data-level="WARN"] .logv__msg {
-  color: #f2b84b;
+  color: var(--log-warn);
 }
 
 .logv__line[data-level="ERROR"] .logv__lvl,
 .logv__line[data-level="ERROR"] .logv__msg {
-  color: #ff7b72;
+  color: var(--log-error);
 }
 
 .logv__line[data-level="INFO"] .logv__msg {
@@ -129,8 +129,8 @@
 }
 
 .logv mark {
-  background: #d6a100;
-  color: #0b0e14;
+  background: var(--warning);
+  color: var(--log-bg);
   border-radius: 2px;
   padding: 0 1px;
 }

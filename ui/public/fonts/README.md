@@ -1,12 +1,12 @@
 # Self-hosted fonts
 
-The dashboard's Content-Security-Policy only allows resources from its own origin, so the
-two typefaces are shipped here instead of being loaded from a font CDN.
+The dashboard's Content-Security-Policy only allows fonts from its own origin
+(`font-src 'self'`), so no font CDN is used. Files here are served at `/ui/fonts/`.
 
-| File | Family | Use | License |
+| File | Family | Source | License |
 |---|---|---|---|
-| `sora-latin.woff2` | [Sora](https://fonts.google.com/specimen/Sora) (variable, latin subset) | headings, labels, numbers | SIL Open Font License 1.1 |
-| `manrope-latin.woff2` | [Manrope](https://fonts.google.com/specimen/Manrope) (variable, latin subset) | body text | SIL Open Font License 1.1 |
+| `inter-latin.woff2` | Inter (variable, weights 100-900, latin) | `@fontsource-variable/inter` 5.3.0 | SIL OFL 1.1: `OFL-Inter.txt` |
+| `ibm-plex-mono-latin-{400,500,600}.woff2` | IBM Plex Mono (latin) | `@fontsource/ibm-plex-mono` 5.3.0 | SIL OFL 1.1: `OFL-IBM-Plex-Mono.txt` |
 
-Both are distributed under the SIL OFL 1.1 (https://openfontlicense.org), which permits
-redistribution with the software. They are declared in `ui/src/styles/base.css`.
+The OFL permits redistribution with the font files, provided the license text
+travels with them. Do not rename or sell the fonts on their own.

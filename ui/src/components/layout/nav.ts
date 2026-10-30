@@ -1,55 +1,74 @@
-import { Activity, AppWindow, Boxes, FolderKanban, Globe, Hammer, LayoutDashboard, Rocket, ScrollText, Server, Settings, ShieldCheck, UserRound, Workflow } from "lucide-react";
+import { Activity, AppWindow, GitBranch, LayoutDashboard, Rocket, ScrollText, Server, Settings, Sparkles, TerminalSquare } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+
+export interface NavChild {
+  label: string;
+  to: string;
+}
 
 export interface NavItem {
   label: string;
-  to?: string;
+  to: string;
   icon: LucideIcon;
-  /** Set for features the backend does not offer: rendered disabled with this explanation. */
-  unavailable?: string;
+  /** Pages that live under this item in the sidebar. */
+  children?: NavChild[];
+  /** Other route prefixes that should light this item (e.g. a detail page it owns). */
+  also?: string[];
 }
 
-export interface NavGroup {
-  label: string;
-  items: NavItem[];
-}
-
-export const NAV: NavGroup[] = [
-  {
-    label: "Workspace",
-    items: [
-      { label: "Overview", to: "/overview", icon: LayoutDashboard },
-      { label: "Projects", icon: FolderKanban, unavailable: "ShipFlow has no workspace-level project grouping yet. Each project is one application: see Applications." },
-      { label: "Applications", to: "/applications", icon: AppWindow },
-      { label: "Deployments", to: "/deployments", icon: Rocket },
-      { label: "Build Runs", to: "/build-runs", icon: Hammer },
-      { label: "RepoPilot", to: "/repopilot", icon: ShieldCheck },
-    ],
-  },
+/** Sidebar order, from the Flowstep reference. A divider is drawn before DIVIDE_BEFORE. */
+export const NAV: NavItem[] = [
+  { label: "Overview", to: "/overview", icon: LayoutDashboard },
+  { label: "Applications", to: "/applications", icon: AppWindow },
+  { label: "Pipelines", to: "/pipelines", icon: GitBranch, also: ["/releases"] },
+  { label: "Deployments", to: "/deployments", icon: Rocket },
   {
     label: "Infrastructure",
-    items: [
-      { label: "Servers", to: "/servers", icon: Server },
-      { label: "Container Registries", to: "/registries", icon: Boxes },
-      { label: "Domains", to: "/domains", icon: Globe },
-      { label: "Environments", icon: Workflow, unavailable: "Environments are not a ShipFlow concept yet. Use one project per environment (for example my-app and my-app-staging)." },
+    to: "/infrastructure",
+    icon: Server,
+    children: [
+      { label: "Servers", to: "/servers" },
+      { label: "Registries", to: "/registries" },
+      { label: "Domains", to: "/domains" },
     ],
   },
+  { label: "Build Runs", to: "/build-runs", icon: TerminalSquare },
+  { label: "RepoPilot", to: "/repopilot", icon: Sparkles },
+  { label: "Activity", to: "/activity", icon: Activity },
   {
-    label: "Operations",
-    items: [
-      { label: "Activity", to: "/activity", icon: Activity },
-      { label: "Logs", to: "/logs", icon: ScrollText },
-    ],
-  },
-  {
-    label: "Administration",
-    items: [
-      { label: "Settings", to: "/settings", icon: Settings },
-      { label: "Account", to: "/account", icon: UserRound },
+    label: "Settings",
+    to: "/settings",
+    icon: Settings,
+    children: [
+      { label: "Secrets", to: "/settings/secrets" },
+      { label: "Account", to: "/account" },
     ],
   },
 ];
 
-/** Routes searchable in the command menu. */
-export const NAV_ROUTES = NAV.flatMap((group) => group.items.filter((item) => item.to).map((item) => ({ label: item.label, to: item.to as string, icon: item.icon, group: group.label })));
+export const DIVIDE_BEFORE = "Settings";
+
+const matches = (pathname: string, to: string): boolean => pathname === to || pathname.startsWith(`${to}/`);
+
+/** True when `pathname` belongs to this item (its own page, a child's page, or an owned detail route). */
+export function isItemActive(pathname: string, item: NavItem): boolean {
+  return matches(pathname, item.to) || (item.also ?? []).some((prefix) => matches(pathname, prefix)) || (item.children ?? []).some((child) => matches(pathname, child.to));
+}
+
+/** The exact entry that should look selected: a child if one matches, otherwise the item. */
+export function activeEntry(pathname: string, item: NavItem): string | null {
+  const child = (item.children ?? []).find((candidate) => matches(pathname, candidate.to));
+
+  if (child) return child.to;
+
+  return matches(pathname, item.to) || (item.also ?? []).some((prefix) => matches(pathname, prefix)) ? item.to : null;
+}
+
+/** Pages offered by the command menu. Includes routes that have no sidebar entry (Logs). */
+export const NAV_ROUTES: Array<{ label: string; to: string; icon: LucideIcon; group: string }> = [
+  ...NAV.flatMap((item) => [
+    { label: item.label, to: item.to, icon: item.icon, group: "Navigate" },
+    ...(item.children ?? []).map((child) => ({ label: child.label, to: child.to, icon: item.icon, group: item.label })),
+  ]),
+  { label: "Logs", to: "/logs", icon: ScrollText, group: "Navigate" },
+];

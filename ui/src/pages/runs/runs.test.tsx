@@ -113,7 +113,7 @@ describe("Activity, Logs and Overview", () => {
   it("shows real counts, readiness and attention on the overview", async () => {
     renderPage(<OverviewPage />);
 
-    expect(await screen.findByText("Successful builds")).toBeInTheDocument();
+    expect(await screen.findByText("Success rate")).toBeInTheDocument();
     expect(await screen.findByText("database")).toBeInTheDocument();
 
     const attention = (await screen.findByRole("heading", { name: "Needs attention" })).closest("section")!;

@@ -5,26 +5,26 @@ import { Skeleton } from "@/components/ui";
 import { summarizeReleases } from "@/lib/derive";
 import { formatDuration, pluralize } from "@/lib/format";
 import { statusMeta } from "@/lib/status";
-import { healthBars, HEALTH_WINDOW } from "./health";
+import { healthBars, HEALTH_WINDOW, releaseMetrics } from "./health";
 
 interface DeployHealthProps {
   releases: Release[];
-  applications: number | undefined;
   loading: boolean;
 }
 
-/** Bar chart of the latest releases plus the four headline numbers, all from real release records. */
-export function DeployHealth({ releases, applications, loading }: DeployHealthProps) {
+/** Bar chart of the latest releases plus three derived numbers, all from real release records. */
+export function DeployHealth({ releases, loading }: DeployHealthProps) {
   const window = releases.slice(0, HEALTH_WINDOW);
   const bars = healthBars(releases);
   const summary = summarizeReleases(window);
+  const metrics = releaseMetrics(window);
   const label = `last ${pluralize(window.length, "release")}`;
 
   return (
     <section className="card health" aria-labelledby="health-title">
       <header className="health__head">
         <div>
-          <h2 className="card__title" id="health-title">Deploy health</h2>
+          <h2 className="card__title" id="health-title">Deployment pulse</h2>
           <p className="card__sub">{label[0]?.toUpperCase()}{label.slice(1)}</p>
         </div>
         <Link to="/build-runs" className="link-accent">
@@ -55,28 +55,21 @@ export function DeployHealth({ releases, applications, loading }: DeployHealthPr
         )}
       </div>
 
-      <dl className="health__stats">
+      <dl className="health__stats health__stats--mini">
         <div className="health__stat">
-          <dt className="label-caps">Applications</dt>
-          <dd className="health__value">{loading || applications === undefined ? <Skeleton width={28} height={26} /> : applications}</dd>
-          <dd className="health__hint">registered projects</dd>
+          <dt>Median duration</dt>
+          <dd className="health__value mono">{loading ? <Skeleton width={44} height={22} /> : formatDuration(metrics.medianDurationMs)}</dd>
         </div>
         <div className="health__stat">
-          <dt className="label-caps">Successful builds</dt>
-          <dd className="health__value">{loading ? <Skeleton width={28} height={26} /> : summary.succeeded}</dd>
-          <dd className="health__hint">{label}</dd>
+          <dt>Throughput</dt>
+          <dd className="health__value mono">{loading ? <Skeleton width={44} height={22} /> : metrics.throughputPerDay === null ? "—" : `${metrics.throughputPerDay}/day`}</dd>
         </div>
         <div className="health__stat">
-          <dt className="label-caps">Failed builds</dt>
-          <dd className={`health__value${summary.failed > 0 ? " health__value--failed" : ""}`}>{loading ? <Skeleton width={28} height={26} /> : summary.failed}</dd>
-          <dd className="health__hint">{label}</dd>
-        </div>
-        <div className="health__stat">
-          <dt className="label-caps">Running / queued</dt>
-          <dd className="health__value">{loading ? <Skeleton width={44} height={26} /> : `${summary.running} / ${summary.queued}`}</dd>
-          <dd className="health__hint">right now</dd>
+          <dt>Error rate</dt>
+          <dd className={`health__value mono${(metrics.errorRatePct ?? 0) > 0 ? " health__value--failed" : ""}`}>{loading ? <Skeleton width={44} height={22} /> : metrics.errorRatePct === null ? "—" : `${metrics.errorRatePct}%`}</dd>
         </div>
       </dl>
+      <p className="muted health__foot">Derived from release history · {label}</p>
     </section>
   );
 }

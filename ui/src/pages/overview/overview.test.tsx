@@ -3,7 +3,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Release } from "@/api/types";
 import { renderPage } from "@/test/render";
-import { healthBars, HEALTH_WINDOW } from "./health";
+import { healthBars, HEALTH_WINDOW, releaseMetrics } from "./health";
 import OverviewPage from "./OverviewPage";
 
 const release = (id: string, status: Release["status"], minutesAgo: number, durationMin: number): Release =>
@@ -38,24 +38,73 @@ describe("health bars", () => {
   });
 });
 
-describe("Overview (design reference layout)", () => {
-  it("shows the eyebrow, the four headline numbers inside Deploy health, and the real side cards", async () => {
+describe("release metrics (derived from release records only)", () => {
+  it("computes rates over FINISHED releases and ignores cancelled/queued/running", () => {
+    const m = releaseMetrics([release("a", "SUCCESS", 60, 2), release("b", "SUCCESS", 50, 4), release("c", "FAILED", 40, 6), release("d", "CANCELLED", 30, 1), release("e", "RUNNING", 5, 0), release("f", "QUEUED", 1, 0)]);
+
+    expect(m.finished).toBe(3);
+    expect(m.successRatePct).toBe(66.7);
+    expect(m.errorRatePct).toBe(33.3);
+    expect(m.medianDurationMs).toBe(4 * 60_000);
+  });
+
+  it("takes the mean of the two middle durations for an even count", () => {
+    expect(releaseMetrics([release("a", "SUCCESS", 30, 2), release("b", "FAILED", 20, 4)]).medianDurationMs).toBe(3 * 60_000);
+  });
+
+  it("reports nothing rather than zero when there is no finished release", () => {
+    const m = releaseMetrics([release("q", "QUEUED", 1, 0)]);
+
+    expect(m).toMatchObject({ successRatePct: null, errorRatePct: null, medianDurationMs: null, throughputPerDay: null, finished: 0 });
+    expect(releaseMetrics([])).toMatchObject({ successRatePct: null, throughputPerDay: null });
+  });
+
+  it("computes throughput across the window's span, at least one day", () => {
+    const day = 24 * 60;
+
+    expect(releaseMetrics([release("a", "SUCCESS", 2 * day, 1), release("b", "SUCCESS", 0, 1), release("c", "SUCCESS", day, 1), release("d", "SUCCESS", day, 1)]).throughputPerDay).toBe(2);
+    expect(releaseMetrics([release("a", "SUCCESS", 10, 1), release("b", "SUCCESS", 5, 1)]).throughputPerDay).toBe(2);
+  });
+});
+
+describe("Overview (Flowstep layout)", () => {
+  it("shows the four headline stat cards from real data", async () => {
     renderPage(<OverviewPage />);
 
-    expect(await screen.findByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument();
-    expect(await screen.findByText(/· self-hosted/i)).toBeInTheDocument();
+    const stats = await screen.findByRole("list", { name: "Headline numbers" });
 
-    const health = (await screen.findByRole("heading", { name: "Deploy health" })).closest("section")!;
+    for (const label of ["Applications", "Success rate", "Running builds", "Failed deploys"]) expect(await within(stats).findByText(label)).toBeInTheDocument();
+    expect(within(stats).getAllByRole("listitem")).toHaveLength(4);
+  });
 
-    for (const label of ["Applications", "Successful builds", "Failed builds", "Running / queued"]) {
-      expect(await within(health).findByText(label)).toBeInTheDocument();
-    }
+  it("shows the deployment pulse with a text alternative and derived numbers, labelled as derived", async () => {
+    renderPage(<OverviewPage />);
 
-    // The chart is an image with a text alternative built from the same data.
-    expect(await within(health).findByRole("img", { name: /succeeded and \d+ failed in the last \d+ releases/ })).toBeInTheDocument();
+    const pulse = (await screen.findByRole("heading", { name: "Deployment pulse" })).closest("section")!;
 
-    expect(screen.getByRole("heading", { name: "System readiness" })).toBeInTheDocument();
+    expect(await within(pulse).findByRole("img", { name: /succeeded and \d+ failed in the last \d+ releases/ })).toBeInTheDocument();
+    for (const label of ["Median duration", "Throughput", "Error rate"]) expect(within(pulse).getByText(label)).toBeInTheDocument();
+    expect(within(pulse).getByText(/Derived from release history/)).toBeInTheDocument();
+  });
+
+  it("keeps the real readiness and attention cards, and labels roadmap items as planned", async () => {
+    renderPage(<OverviewPage />);
+
+    expect(await screen.findByRole("heading", { name: "System readiness" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: /needs attention|all clear/i })).toBeInTheDocument();
+
+    const future = (await screen.findByRole("heading", { name: "Future capabilities" })).closest("section")!;
+
+    expect(within(future).getByText(/not active in this workspace/)).toBeInTheDocument();
+    for (const name of ["Preview environments", "SBOM generation", "Canary releases"]) expect(within(future).getByText(name)).toBeInTheDocument();
+  });
+
+  it("links the recent releases to the Pipelines list", async () => {
+    renderPage(<OverviewPage />);
+
+    const recent = (await screen.findByRole("heading", { name: "Recent releases" })).closest("section")!;
+
+    expect(within(recent).getByRole("link", { name: /view all/i })).toHaveAttribute("href", "/pipelines");
   });
 
   it("offers the primary actions from the page header, with the application picker inside the Deploy dialog", async () => {
@@ -63,8 +112,6 @@ describe("Overview (design reference layout)", () => {
 
     expect(await screen.findByRole("link", { name: /new application/i })).toHaveAttribute("href", "/applications/new");
     expect(screen.getByRole("button", { name: /refresh/i })).toBeInTheDocument();
-
-    // No application dropdown sits in the header itself.
     expect(screen.queryByLabelText("Application to deploy")).not.toBeInTheDocument();
 
     await userEvent.click(await screen.findByRole("button", { name: /deploy…/i }));

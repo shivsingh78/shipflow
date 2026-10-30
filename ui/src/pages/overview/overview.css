@@ -68,7 +68,7 @@
   min-width: 2px;
   max-width: 12px;
   border-radius: 2px 2px 0 0;
-  background: oklch(70% 0.016 70 / 0.35);
+  background: color-mix(in oklab, var(--neutral) 35%, transparent);
 }
 
 .bar--empty {
@@ -78,16 +78,16 @@
 }
 
 .bar--failed {
-  background: var(--accent);
+  background: var(--danger);
 }
 
 .bar--running {
-  background: oklch(68% 0.19 36 / 0.55);
+  background: color-mix(in oklab, var(--accent) 55%, transparent);
   animation: pulse 1.4s ease-in-out infinite;
 }
 
 .bar--cancelled {
-  background: oklch(82% 0.14 80 / 0.4);
+  background: color-mix(in oklab, var(--warning) 40%, transparent);
 }
 
 .bar--queued {
@@ -125,7 +125,7 @@
 }
 
 .health__value--failed {
-  color: var(--accent);
+  color: var(--danger);
 }
 
 .health__hint {
@@ -155,8 +155,8 @@
 /* ---- Needs attention ---- */
 .needs {
   padding: var(--space-5);
-  background: oklch(68% 0.19 36 / 0.06);
-  border-color: oklch(68% 0.19 36 / 0.4);
+  background: color-mix(in oklab, var(--danger) 6%, transparent);
+  border-color: color-mix(in oklab, var(--danger) 40%, transparent);
 }
 
 .needs--clear {
@@ -173,7 +173,7 @@
 .needs__icon {
   flex: none;
   margin-top: 1px;
-  color: var(--accent);
+  color: var(--danger);
 }
 
 .needs__icon--ok {
@@ -204,7 +204,7 @@
 }
 
 .needs__app {
-  color: var(--accent);
+  color: var(--danger);
   font-size: var(--text-md);
   font-weight: 600;
 }
@@ -219,10 +219,10 @@
   display: block;
   margin-top: var(--space-3);
   padding: 0 var(--space-3);
-  border: 1px solid oklch(68% 0.19 36 / 0.35);
+  border: 1px solid color-mix(in oklab, var(--danger) 35%, transparent);
   border-radius: var(--radius);
-  background: oklch(68% 0.19 36 / 0.1);
-  color: var(--accent);
+  background: color-mix(in oklab, var(--danger) 10%, transparent);
+  color: var(--danger);
   font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0.025em;
@@ -232,7 +232,7 @@
 }
 
 .needs__action:hover {
-  background: oklch(68% 0.19 36 / 0.18);
+  background: color-mix(in oklab, var(--danger) 18%, transparent);
   text-decoration: none;
 }
 
@@ -273,7 +273,7 @@
 .readiness__bad {
   flex: none;
   margin-top: 1px;
-  color: var(--accent);
+  color: var(--danger);
 }
 
 .readiness__name {
@@ -344,3 +344,25 @@
 .compact-releases .row--wrap {
   flex-wrap: nowrap;
 }
+
+/* ---- Flowstep composition: stat row, pulse + health, recent releases, errors + roadmap ---- */
+.overview-stack { display: flex; flex-direction: column; gap: var(--space-6); }
+.overview-grid { grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr); }
+.overview-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); align-items: start; }
+.stat-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-4); margin: 0; padding: 0; list-style: none; }
+.stat-card { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-5); }
+.stat-card__label { display: flex; align-items: center; justify-content: space-between; color: var(--text-muted); font-size: var(--text-md); }
+.stat-card__label svg { color: var(--accent); }
+.stat-card--alert .stat-card__label svg { color: var(--danger); }
+.stat-card__value { font-size: var(--text-3xl); font-weight: 600; line-height: 1.1; letter-spacing: var(--tracking-tight); }
+.stat-card__hint { color: var(--text-muted); font-size: var(--text-xs); }
+.health__stats--mini { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); margin: var(--space-4) var(--space-5) 0; padding: 0; border: 0; }
+.health__stats--mini .health__stat { padding: var(--space-3); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.health__stats--mini dt { color: var(--text-muted); font-size: var(--text-xs); }
+.health__stats--mini .health__value { margin-top: var(--space-1); font-size: var(--text-xl); }
+.health__foot { margin: var(--space-4) var(--space-5) var(--space-5); font-size: var(--text-xs); }
+.future__head { display: flex; align-items: flex-start; justify-content: space-between; }
+.future__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-4) 0 0; padding: 0; list-style: none; }
+.future__note { margin-top: var(--space-4); font-size: var(--text-xs); }
+.future { padding: var(--space-5); }
+@media (max-width: 900px) { .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } .overview-grid, .overview-pair { grid-template-columns: minmax(0, 1fr); } }

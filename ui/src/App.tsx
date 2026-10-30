@@ -20,12 +20,15 @@ const SettingsTab = lazy(() => import("@/pages/applications/tabs/SettingsTab"));
 const DeploymentsPage = lazy(() => import("@/pages/runs/DeploymentsPage"));
 const BuildRunsPage = lazy(() => import("@/pages/runs/BuildRunsPage"));
 const ReleaseDetailPage = lazy(() => import("@/pages/runs/ReleaseDetailPage"));
+const InfrastructurePage = lazy(() => import("@/pages/infrastructure/InfrastructurePage"));
 const ServersPage = lazy(() => import("@/pages/infrastructure/ServersPage"));
 const RegistriesPage = lazy(() => import("@/pages/infrastructure/RegistriesPage"));
 const DomainsPage = lazy(() => import("@/pages/infrastructure/DomainsPage"));
+const PipelinesPage = lazy(() => import("@/pages/pipelines/PipelinesPage"));
 const ActivityPage = lazy(() => import("@/pages/activity/ActivityPage"));
 const LogsPage = lazy(() => import("@/pages/logs/LogsPage"));
 const SettingsPage = lazy(() => import("@/pages/settings/SettingsPage"));
+const SecretsPage = lazy(() => import("@/pages/settings/SecretsPage"));
 const AccountPage = lazy(() => import("@/pages/settings/AccountPage"));
 const RepoPilotPage = lazy(() => import("@/pages/repopilot/RepoPilotPage"));
 const RepoPilotRunPage = lazy(() => import("@/pages/repopilot/RunDetailPage"));
@@ -53,17 +56,20 @@ function Routed() {
             <Route path="environment" element={<EnvironmentTab />} />
             <Route path="settings" element={<SettingsTab />} />
           </Route>
+          <Route path="pipelines" element={<PipelinesPage />} />
           <Route path="deployments" element={<DeploymentsPage />} />
           <Route path="build-runs" element={<BuildRunsPage />} />
           <Route path="releases/:releaseId" element={<ReleaseDetailPage />} />
           <Route path="repopilot" element={<RepoPilotPage />} />
           <Route path="repopilot/runs/:runId" element={<RepoPilotRunPage />} />
+          <Route path="infrastructure" element={<InfrastructurePage />} />
           <Route path="servers" element={<ServersPage />} />
           <Route path="registries" element={<RegistriesPage />} />
           <Route path="domains" element={<DomainsPage />} />
           <Route path="activity" element={<ActivityPage />} />
           <Route path="logs" element={<LogsPage />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="settings/secrets" element={<SecretsPage />} />
           <Route path="account" element={<AccountPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

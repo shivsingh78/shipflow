@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { LogOut, Menu, Search, UserRound } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
+import { Breadcrumbs } from "./Breadcrumbs";
 import { Logo } from "./Logo";
 import { ProjectSwitcher } from "./ProjectSwitcher";
+import { ThemeSwitcher } from "./ThemeSwitcher";
 
 const isMac = typeof navigator !== "undefined" && /mac|iphone|ipad/i.test(navigator.platform);
 
@@ -36,15 +38,16 @@ export function Topbar({ onMenu, onSearch }: { onMenu: () => void; onSearch: () 
       </button>
       <Link to="/overview" className="topbar__brand" aria-label="ShipFlow overview">
         <Logo size={32} />
-        <span className="brand-name">ShipFlow</span>
       </Link>
-      <button type="button" className="topbar__search" onClick={onSearch} aria-label="Search releases, applications and pages">
-        <Search size={15} aria-hidden />
-        <span className="topbar__search-text">Search releases, apps, servers…</span>
-        <kbd>{isMac ? "⌘K" : "Ctrl K"}</kbd>
-      </button>
+      <Breadcrumbs />
       <div className="grow" />
       <ProjectSwitcher />
+      <button type="button" className="topbar__search" onClick={onSearch} aria-label="Search releases, applications and pages">
+        <Search size={15} aria-hidden />
+        <span className="topbar__search-text">Search</span>
+        <kbd>{isMac ? "⌘ K" : "Ctrl K"}</kbd>
+      </button>
+      <ThemeSwitcher />
       <div className="menu" ref={menuRef}>
         <button type="button" className="avatar" onClick={() => setMenu((m) => !m)} aria-haspopup="menu" aria-expanded={menu} aria-label="Account menu">
           <UserRound size={16} aria-hidden />

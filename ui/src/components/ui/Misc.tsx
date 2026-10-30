@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { Check, Minus, X } from "lucide-react";
 import { Skeleton } from "./States";
 import type { ReleaseStage, ReleaseStatus } from "@/api/types";
-import { STAGES } from "@/api/types";
 import { stageLabel } from "@/lib/status";
+import { stageStates } from "@/lib/pipeline";
 
 export function Stat({ label, value, hint, icon, loading = false }: { label: string; value: ReactNode; hint?: ReactNode; icon?: ReactNode; loading?: boolean }) {
   return (
@@ -31,30 +31,16 @@ export function KeyValue({ items }: { items: Array<{ label: ReactNode; value: Re
   );
 }
 
-type StepState = "pending" | "running" | "done" | "failed" | "skipped";
-
 /**
  * The pipeline as ShipFlow actually runs it. `mode: "check"` stops after TEST,
  * so later stages are shown as skipped rather than pending.
  */
 export function PipelineSteps({ status, stage, mode }: { status: ReleaseStatus; stage: ReleaseStage; mode: "deploy" | "check" }) {
-  const stages = STAGES;
-  const index = stages.indexOf(stage);
-
-  const stateOf = (name: ReleaseStage, i: number): StepState => {
-    if (mode === "check" && i > stages.indexOf("TEST")) return "skipped";
-    if (status === "QUEUED" || index === -1) return "pending";
-    if (status === "SUCCESS") return "done";
-    if (i < index) return "done";
-    if (i === index) return status === "FAILED" ? "failed" : status === "CANCELLED" ? "skipped" : "running";
-
-    return name === stage ? "running" : "pending";
-  };
+  const states = stageStates({ status, stage, mode });
 
   return (
     <ol className="pipeline" aria-label="Pipeline stages" style={{ listStyle: "none", margin: 0, padding: 0 }}>
-      {stages.map((name, i) => {
-        const state = stateOf(name, i);
+      {states.map(({ stage: name, state }) => {
 
         return (
           <li key={name} className="pipeline__step" data-state={state}>

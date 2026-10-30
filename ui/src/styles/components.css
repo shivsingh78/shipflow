@@ -480,7 +480,7 @@
 .textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px oklch(68% 0.19 36 / 0.25);
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 25%, transparent);
 }
 
 .input[aria-invalid="true"],
@@ -876,9 +876,12 @@
 }
 
 .pipeline__step[data-state="done"]::before,
-.pipeline__step[data-state="running"]::before,
-.pipeline__step[data-state="failed"]::before {
+.pipeline__step[data-state="running"]::before {
   background: var(--accent);
+}
+
+.pipeline__step[data-state="failed"]::before {
+  background: var(--danger);
 }
 
 .pipeline__node {
@@ -948,3 +951,14 @@
 .table td a:not(.release-id):not(.link-accent):hover {
   color: var(--accent);
 }
+
+/* ---------- Compact pipeline track (Pipelines list) ---------- */
+.track { display: inline-flex; align-items: center; }
+.track__node { width: 12px; height: 12px; flex: none; border: 2px solid var(--border-strong); border-radius: 50%; background: var(--surface); }
+.track__line { width: 14px; height: 2px; flex: none; background: var(--border); }
+.track__line[data-state="done"] { background: var(--chart-2); }
+.track__node[data-state="done"] { border-color: var(--chart-2); background: var(--chart-2); }
+.track__node[data-state="running"] { border-color: var(--accent); background: var(--accent-soft); animation: pulse 1.4s ease-in-out infinite; }
+.track__node[data-state="failed"] { border-color: var(--danger); background: var(--danger); }
+.track__node[data-state="skipped"] { border-style: dashed; background: transparent; }
+@media (prefers-reduced-motion: reduce) { .track__node[data-state="running"] { animation: none; } }

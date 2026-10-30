@@ -1,13 +1,19 @@
-/* ShipFlow design tokens: a warm near-black theme with an orange primary.
-   The palette, radii and type scale follow the design reference; values are
-   OKLCH so tints are derived from one hue instead of hand-picked hex codes.
-   The dashboard is dark-only (the reference defines no light theme). */
-:root {
-  color-scheme: dark;
+/* ShipFlow design tokens, from the Flowstep reference: a cool, near-white light
+   theme and a deep blue-slate dark theme sharing one teal primary.
+   Values are OKLCH so each tint derives from one hue. The Flowstep file only
+   renders Overview in dark; the other screens' dark values are derived from the
+   same tokens (same hues, lightness mirrored), never hand-picked per screen.
 
-  --font-sans: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-display: "Sora", "Manrope", ui-sans-serif, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+   Themes: <html data-theme="light|dark"> is the RESOLVED theme. The user's
+   choice (light | dark | system) lives in ThemeProvider/localStorage and
+   public/theme-init.js sets the attribute before first paint. Component CSS only
+   ever reads the variables below, so a new theme is one more block here. */
+
+:root {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Kept as a separate name so a display face can return; today it is Inter. */
+  --font-display: var(--font-sans);
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
 
   --text-2xs: 0.625rem;
   --text-xs: 0.75rem;
@@ -19,7 +25,7 @@
   --text-3xl: 1.875rem;
 
   --tracking-tight: -0.025em;
-  --tracking-label: 0.16em;
+  --tracking-label: 0.08em;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -31,65 +37,130 @@
   --space-10: 2.5rem;
 
   --radius-sm: 4px;
-  --radius: 10px;
-  --radius-lg: 16px;
+  --radius: 8px;
+  --radius-lg: 12px;
   --radius-pill: 999px;
 
-  --sidebar-w: 256px;
-  --sidebar-w-collapsed: 256px;
-  --topbar-h: 56px;
-  --content-max: 1184px;
+  /* Reference shell: 248px sidebar, 64px header. */
+  --sidebar-w: 248px;
+  --sidebar-w-collapsed: 248px;
+  --topbar-h: 64px;
+  --content-max: 1200px;
+
+  color-scheme: light;
 
   /* Surfaces */
-  --bg: oklch(17% 0.01 55);
-  --surface: oklch(20.5% 0.012 55);
-  --surface-2: oklch(24.5% 0.012 55);
-  --surface-hover: oklch(27% 0.018 50);
-  --popover: oklch(22% 0.012 55);
-  --border: oklch(28% 0.012 55);
-  --border-strong: oklch(34% 0.014 55);
+  --bg: oklch(98.3% 0.006 235);
+  --surface: oklch(100% 0 0);
+  --surface-2: oklch(96.6% 0.01 235);
+  --surface-hover: oklch(94.6% 0.024 195);
+  --popover: oklch(100% 0 0);
+  --border: oklch(91.5% 0.012 235);
+  --border-strong: oklch(84.5% 0.017 235);
 
   /* Text */
-  --text: oklch(95.5% 0.006 80);
-  --text-muted: oklch(70% 0.016 70);
-  --text-subtle: oklch(62% 0.016 70);
+  --text: oklch(21% 0.03 255);
+  --text-muted: oklch(47% 0.03 250);
+  --text-subtle: oklch(54% 0.026 250);
 
-  /* Primary (orange) */
-  --accent: oklch(68% 0.19 36);
-  --accent-hover: oklch(72% 0.19 36);
-  --accent-soft: oklch(68% 0.19 36 / 0.12);
-  --accent-text: oklch(99% 0.01 70);
-  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px oklch(68% 0.19 36 / 0.7);
-  --glow: 0 4px 22px oklch(68% 0.19 36 / 0.38);
+  /* Primary (teal) */
+  --accent: oklch(52% 0.1 184);
+  --accent-hover: oklch(47% 0.1 184);
+  --accent-soft: oklch(52% 0.1 184 / 0.1);
+  --accent-text: oklch(99% 0.005 190);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px oklch(52% 0.1 184 / 0.55);
+  --glow: 0 0 0 0 transparent;
 
-  /* Status. Failed builds use the primary orange (as in the reference);
-     --destructive is the red used for irreversible actions. */
-  --success: oklch(74% 0.14 155);
-  --success-soft: oklch(74% 0.14 155 / 0.1);
-  --danger: oklch(68% 0.19 36);
-  --danger-soft: oklch(68% 0.19 36 / 0.1);
-  --destructive: oklch(62% 0.21 26);
+  /* Status */
+  --success: oklch(52% 0.13 155);
+  --success-soft: oklch(52% 0.13 155 / 0.1);
+  --danger: oklch(53% 0.2 27);
+  --danger-soft: oklch(53% 0.2 27 / 0.09);
+  --destructive: oklch(53% 0.2 27);
+  --warning: oklch(55% 0.13 65);
+  --warning-soft: oklch(70% 0.15 75 / 0.16);
+  --info: oklch(52% 0.11 235);
+  --info-soft: oklch(52% 0.11 235 / 0.1);
+  --neutral: oklch(47% 0.03 250);
+  --neutral-soft: oklch(47% 0.03 250 / 0.09);
+
+  /* Chart series (reference chart-1..5) */
+  --chart-1: var(--accent);
+  --chart-2: oklch(58% 0.14 150);
+  --chart-3: oklch(68% 0.15 75);
+  --chart-4: oklch(58% 0.19 25);
+  --chart-5: oklch(56% 0.15 290);
+
+  --shadow-sm: 0 1px 2px oklch(25% 0.03 250 / 0.06);
+  --shadow-md: 0 12px 32px oklch(25% 0.03 250 / 0.14);
+  --overlay: oklch(20% 0.03 250 / 0.45);
+
+  /* Terminal / log surfaces are dark in both themes (as in the reference). */
+  --log-bg: oklch(19% 0.025 250);
+  --log-text: oklch(92% 0.01 240);
+  --log-muted: oklch(66% 0.025 240);
+  --log-error-bg: oklch(53% 0.2 27 / 0.28);
+  --log-warn: oklch(80% 0.14 80);
+  --log-error: oklch(72% 0.17 25);
+
+  /* Sidebar */
+  --sb-bg: oklch(96.6% 0.012 235);
+  --sb-border: var(--border);
+  --sb-text: var(--text-muted);
+  --sb-text-strong: var(--text);
+  --sb-hover: oklch(94% 0.02 215);
+  --sb-active: oklch(52% 0.1 184 / 0.11);
+  --sb-active-text: var(--accent);
+  --sb-muted: var(--text-subtle);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: oklch(15.5% 0.02 250);
+  --surface: oklch(18.5% 0.022 250);
+  --surface-2: oklch(22% 0.024 250);
+  --surface-hover: oklch(25% 0.032 215);
+  --popover: oklch(20.5% 0.022 250);
+  --border: oklch(28% 0.025 250);
+  --border-strong: oklch(36% 0.03 250);
+
+  --text: oklch(96% 0.008 240);
+  --text-muted: oklch(72% 0.025 240);
+  --text-subtle: oklch(64% 0.025 240);
+
+  --accent: oklch(74% 0.125 184);
+  --accent-hover: oklch(79% 0.125 184);
+  --accent-soft: oklch(74% 0.125 184 / 0.14);
+  --accent-text: oklch(17% 0.03 200);
+  --focus-ring: 0 0 0 2px var(--bg), 0 0 0 4px oklch(74% 0.125 184 / 0.7);
+
+  --success: oklch(76% 0.14 155);
+  --success-soft: oklch(76% 0.14 155 / 0.12);
+  --danger: oklch(70% 0.19 25);
+  --danger-soft: oklch(70% 0.19 25 / 0.14);
+  --destructive: oklch(66% 0.2 25);
   --warning: oklch(82% 0.14 80);
-  --warning-soft: oklch(82% 0.14 80 / 0.1);
-  --info: oklch(76% 0.11 240);
-  --info-soft: oklch(76% 0.11 240 / 0.1);
-  --neutral: oklch(70% 0.016 70);
-  --neutral-soft: oklch(70% 0.016 70 / 0.1);
+  --warning-soft: oklch(82% 0.14 80 / 0.12);
+  --info: oklch(78% 0.11 225);
+  --info-soft: oklch(78% 0.11 225 / 0.12);
+  --neutral: oklch(72% 0.025 240);
+  --neutral-soft: oklch(72% 0.025 240 / 0.12);
 
-  --shadow-sm: 0 1px 0 oklch(0% 0 0 / 0.25);
+  --chart-2: oklch(74% 0.14 150);
+  --chart-3: oklch(80% 0.14 80);
+  --chart-4: oklch(70% 0.19 25);
+  --chart-5: oklch(74% 0.14 290);
+
+  --shadow-sm: 0 1px 0 oklch(0% 0 0 / 0.3);
   --shadow-md: 0 16px 48px oklch(0% 0 0 / 0.55);
-  --log-bg: oklch(14.5% 0.01 55);
-  --log-text: oklch(90% 0.008 80);
-  --log-muted: oklch(62% 0.016 70);
-  --overlay: oklch(10% 0.01 55 / 0.72);
+  --overlay: oklch(8% 0.02 250 / 0.7);
 
-  /* Always-dark sidebar */
-  --sb-bg: oklch(14.5% 0.01 55);
-  --sb-border: oklch(24% 0.012 55);
-  --sb-text: oklch(62% 0.016 70);
-  --sb-text-strong: oklch(95.5% 0.006 80);
-  --sb-hover: oklch(20.5% 0.012 55);
-  --sb-active: oklch(27% 0.018 50);
-  --sb-active-text: oklch(95.5% 0.006 80);
-  --sb-muted: oklch(62% 0.016 70);
+  --log-bg: oklch(12.5% 0.02 250);
+  --log-text: oklch(92% 0.01 240);
+  --log-muted: oklch(64% 0.025 240);
+
+  --sb-bg: oklch(13.5% 0.02 250);
+  --sb-hover: oklch(20% 0.026 250);
+  --sb-active: oklch(74% 0.125 184 / 0.14);
 }

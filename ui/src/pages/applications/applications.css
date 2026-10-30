@@ -39,7 +39,7 @@
 .stepper__item button[aria-current="step"] { border-color: var(--accent); color: var(--text); background: var(--accent-soft); font-weight: 600; }
 .stepper__num { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--neutral-soft); font-size: var(--text-xs); font-weight: 600; }
 .stepper__item[data-done="true"] .stepper__num { background: var(--success-soft); color: var(--success); }
-.stepper__item button[aria-current="step"] .stepper__num { background: var(--accent); color: #fff; }
+.stepper__item button[aria-current="step"] .stepper__num { background: var(--accent); color: var(--accent-text); }
 @media (max-width: 720px) { .stepper__label { display: none; } .stepper__item button[aria-current="step"] .stepper__label { display: inline; } }
 
 .wizard-nav { display: flex; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; margin-top: var(--space-5); }

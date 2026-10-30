@@ -1,5 +1,4 @@
 import { Link, useLocation } from "react-router-dom";
-import { ChevronRight } from "lucide-react";
 
 interface Crumb {
   label: string;
@@ -9,16 +8,27 @@ interface Crumb {
 const TOP: Record<string, string> = {
   overview: "Overview",
   applications: "Applications",
+  pipelines: "Pipelines",
   deployments: "Deployments",
+  infrastructure: "Infrastructure",
   "build-runs": "Build Runs",
-  servers: "Servers",
-  registries: "Container Registries",
-  domains: "Domains",
+  repopilot: "RepoPilot",
   activity: "Activity",
   logs: "Logs",
   settings: "Settings",
   account: "Account",
-  releases: "Releases",
+  releases: "Pipelines",
+  servers: "Servers",
+  registries: "Registries",
+  domains: "Domains",
+};
+
+/** Pages that sit under another section in the sidebar. */
+const PARENT: Record<string, Crumb> = {
+  servers: { label: "Infrastructure", to: "/infrastructure" },
+  registries: { label: "Infrastructure", to: "/infrastructure" },
+  domains: { label: "Infrastructure", to: "/infrastructure" },
+  account: { label: "Settings", to: "/settings" },
 };
 
 const TABS: Record<string, string> = {
@@ -35,7 +45,7 @@ export function crumbsFor(pathname: string): Crumb[] {
 
   if (!first) return [{ label: "Overview" }];
 
-  const root: Crumb = { label: TOP[first] ?? first, to: `/${first}` };
+  const root: Crumb = { label: TOP[first] ?? first, to: first === "releases" ? "/pipelines" : `/${first}` };
 
   if (first === "applications" && second === "new") return [root, { label: "New application" }];
   if (first === "applications" && second) {
@@ -44,7 +54,13 @@ export function crumbsFor(pathname: string): Crumb[] {
     return third && TABS[third] ? [root, app, { label: TABS[third] }] : [root, { label: second }];
   }
 
-  if (first === "releases" && second) return [root, { label: second }];
+  if (first === "releases" && second) return [root, { label: `Release ${second}` }];
+  if (first === "repopilot" && second === "runs" && third) return [root, { label: `Run #${third}` }];
+  if (first === "settings" && second === "secrets") return [root, { label: "Secrets" }];
+
+  const parent = PARENT[first];
+
+  if (parent) return [parent, { label: root.label }];
 
   return [{ label: root.label }];
 }
@@ -60,7 +76,7 @@ export function Breadcrumbs() {
 
           return (
             <li key={`${crumb.label}-${index}`}>
-              {index > 0 ? <ChevronRight size={14} aria-hidden className="subtle" /> : null}
+              {index > 0 ? <span aria-hidden className="breadcrumbs__sep">/</span> : null}
               {crumb.to && !last ? <Link to={crumb.to}>{crumb.label}</Link> : <span aria-current={last ? "page" : undefined}>{crumb.label}</span>}
             </li>
           );

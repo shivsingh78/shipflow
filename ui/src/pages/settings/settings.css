@@ -1,0 +1,20 @@
+.settings__frame { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--space-6); align-items: start; }
+.settings__rail { display: flex; flex-direction: column; gap: 4px; padding: var(--space-2); border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--surface); box-shadow: var(--shadow-sm); }
+.settings__rail-link { display: flex; align-items: center; height: 36px; padding: 0 var(--space-3); border-radius: var(--radius); color: var(--text); font-size: var(--text-md); text-decoration: none; }
+.settings__rail-link:hover { background: var(--surface-hover); text-decoration: none; }
+.settings__rail-link.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.settings__panel { display: flex; flex-direction: column; gap: var(--space-6); min-width: 0; }
+.settings__panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4); }
+.settings__panel-head h2 { font-size: var(--text-xl); }
+.secrets__search { width: 260px; max-width: 100%; }
+.secrets__add { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--space-3); }
+.secrets__add > :first-child { flex: 1 1 240px; }
+.secrets__assurance { display: flex; align-items: center; gap: var(--space-3); }
+.secrets__assurance p { font-size: var(--text-md); }
+.secrets__shield { display: grid; place-items: center; flex: none; width: 36px; height: 36px; border-radius: var(--radius); background: var(--accent-soft); color: var(--accent); }
+.secrets__mask { letter-spacing: 0.15em; color: var(--text-muted); }
+.secrets__future { padding-top: var(--space-6); border-top: 1px solid var(--border); }
+.secrets__future-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+.secrets__future h3 { font-size: var(--text-lg); }
+.secrets__chips { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-4) 0 0; padding: 0; list-style: none; }
+@media (max-width: 900px) { .settings__frame { grid-template-columns: minmax(0, 1fr); } .settings__rail { flex-direction: row; flex-wrap: wrap; } }
